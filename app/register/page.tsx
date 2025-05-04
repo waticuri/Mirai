@@ -22,7 +22,6 @@ export default function RegisterPage() {
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [helpMode, setHelpMode] = useState(false)
-  const [registrationSuccess, setRegistrationSuccess] = useState(false)
 
   // Campos del formulario
   const [name, setName] = useState("")
@@ -220,34 +219,23 @@ export default function RegisterPage() {
     }
 
     try {
-      console.log("Intentando crear usuario con:", { name, email, photoUrl: photoPreview ? "data:image/..." : "null" })
-
       // Crear el usuario en la base de datos
       const newUser = UserDatabase.createUser({
         name,
         email,
-        photoUrl: photoPreview || "",
+        photoUrl: photoPreview,
       })
-
-      console.log("Usuario creado exitosamente:", newUser)
 
       // Establecer como usuario actual
       UserDatabase.setCurrentUser(newUser.id)
 
-      // Verificar que el usuario se haya guardado correctamente
-      const users = UserDatabase.getUsers()
-      console.log("Usuarios después de registro:", users)
-
-      setRegistrationSuccess(true)
       speak(
         "Registro completado correctamente. Tu foto ha sido guardada para el reconocimiento facial. Redirigiendo a la pantalla de inicio de sesión.",
       )
-
       setTimeout(() => {
         router.push("/")
       }, 2000)
     } catch (err: any) {
-      console.error("Error al registrar usuario:", err)
       speak(`Error al registrar: ${err.message}`)
       setError(err.message)
     }
@@ -312,7 +300,7 @@ export default function RegisterPage() {
       setIsCameraActive(true)
 
       // Pequeña pausa para asegurar que el elemento de video se ha renderizado
-      await new Promise((resolve) => setTimeout(resolve, 300))
+      await new Promise((resolve) => setTimeout(resolve, 100))
 
       if (!videoRef.current) {
         console.error("El elemento de video no está disponible después de activar la cámara")
@@ -329,42 +317,32 @@ export default function RegisterPage() {
       console.log("Acceso a la cámara concedido:", stream)
 
       // Asignar el stream al elemento de video
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        streamRef.current = stream
+      videoRef.current.srcObject = stream
+      streamRef.current = stream
 
-        // Asegurarse de que el video se reproduce correctamente
-        videoRef.current.onloadedmetadata = () => {
-          if (videoRef.current) {
-            videoRef.current
-              .play()
-              .then(() => {
-                console.log("Video reproduciendo correctamente")
-                speak(
-                  "Cámara activada. Por favor, ubícate frente a la cámara, asegurando que tu rostro esté bien iluminado y centrado. Cuando estés listo, di 'capturar' para tomar la foto o 'cancelar' para desactivar la cámara.",
-                )
-              })
-              .catch((err) => {
-                console.error("Error al reproducir el video:", err)
-                setCameraError("Error al iniciar la cámara. Por favor, intenta de nuevo.")
-                stopCamera()
-              })
-          }
+      // Asegurarse de que el video se reproduce correctamente
+      videoRef.current.onloadedmetadata = () => {
+        if (videoRef.current) {
+          videoRef.current
+            .play()
+            .then(() => {
+              speak(
+                "Cámara activada. Por favor, ubícate frente a la cámara, asegurando que tu rostro esté bien iluminado y centrado. Cuando estés listo, di 'capturar' para tomar la foto o 'cancelar' para desactivar la cámara.",
+              )
+            })
+            .catch((err) => {
+              console.error("Error al reproducir el video:", err)
+              setCameraError("Error al iniciar la cámara. Por favor, intenta de nuevo.")
+              stopCamera()
+            })
         }
+      }
 
-        // Manejar errores en la carga del video
-        videoRef.current.onerror = (e) => {
-          console.error("Error en el elemento de video:", e)
-          setCameraError("Error al cargar el video. Por favor, intenta de nuevo.")
-          stopCamera()
-        }
-      } else {
-        console.error("El elemento de video sigue sin estar disponible")
-        setCameraError("Error al inicializar la cámara. Por favor, intenta de nuevo.")
-        setIsCameraActive(false)
-        if (stream) {
-          stream.getTracks().forEach((track) => track.stop())
-        }
+      // Manejar errores en la carga del video
+      videoRef.current.onerror = () => {
+        console.error("Error en el elemento de video")
+        setCameraError("Error al cargar el video. Por favor, intenta de nuevo.")
+        stopCamera()
       }
     } catch (err) {
       console.error("Error al acceder a la cámara:", err)
@@ -422,23 +400,10 @@ export default function RegisterPage() {
   }
 
   const capturePhoto = () => {
-    console.log("Iniciando captura de foto...")
-    console.log("Estado de videoRef:", videoRef.current ? "disponible" : "no disponible")
-    console.log("Estado de canvasRef:", canvasRef.current ? "disponible" : "no disponible")
-
-    // Verificar que los refs estén disponibles antes de continuar
-    if (!videoRef.current) {
-      console.error("Elemento de video no disponible")
-      setCameraError("Error: El elemento de video no está disponible. Por favor, intenta de nuevo.")
+    if (!videoRef.current || !canvasRef.current) {
+      console.error("Video o canvas no disponibles")
+      setCameraError("Error al capturar la foto. Por favor, intenta de nuevo.")
       speak("Error al capturar la foto. Por favor, intenta de nuevo.")
-      return
-    }
-
-    // Asegurarse de que el canvas esté disponible
-    if (!canvasRef.current) {
-      console.error("Elemento canvas no disponible")
-      setCameraError("Error: El elemento canvas no está disponible. Por favor, intenta de nuevo.")
-      speak("Error al procesar la imagen. Por favor, intenta de nuevo.")
       return
     }
 
@@ -451,43 +416,16 @@ export default function RegisterPage() {
         return
       }
 
-      // Verificar que el video tenga dimensiones válidas
-      const videoWidth = videoRef.current.videoWidth || 640
-      const videoHeight = videoRef.current.videoHeight || 480
-
-      console.log("Dimensiones del video:", videoWidth, "x", videoHeight)
-
-      // Establecer dimensiones del canvas al tamaño del video o usar valores predeterminados
-      canvasRef.current.width = videoWidth
-      canvasRef.current.height = videoHeight
-
-      // Asegurarse de que el video esté reproduciendo antes de capturar
-      if (videoRef.current.paused || videoRef.current.ended) {
-        console.warn("El video está pausado o terminado, intentando reproducir...")
-        try {
-          // Intentar reproducir el video si está pausado
-          videoRef.current.play().catch((e) => {
-            console.error("No se pudo reproducir el video:", e)
-          })
-        } catch (e) {
-          console.error("Error al intentar reproducir el video:", e)
-        }
-      }
+      // Establecer dimensiones del canvas al tamaño del video
+      canvasRef.current.width = videoRef.current.videoWidth
+      canvasRef.current.height = videoRef.current.videoHeight
 
       // Dibujar el frame actual del video en el canvas
-      context.drawImage(videoRef.current, 0, 0, videoWidth, videoHeight)
+      context.drawImage(videoRef.current, 0, 0, videoRef.current.videoWidth, videoRef.current.videoHeight)
 
       // Convertir el canvas a una URL de datos
       const photoData = canvasRef.current.toDataURL("image/png")
-      if (!photoData || photoData === "data:,") {
-        console.error("No se pudo generar la imagen")
-        setCameraError("Error: No se pudo generar la imagen. Por favor, intenta de nuevo.")
-        speak("Error al capturar la foto. Por favor, intenta de nuevo.")
-        return
-      }
-
       setPhotoPreview(photoData)
-      console.log("Foto capturada correctamente")
 
       // Detener la cámara
       stopCamera()
@@ -501,22 +439,6 @@ export default function RegisterPage() {
       setCameraError("Error al capturar la foto. Por favor, intenta de nuevo.")
       speak("Error al capturar la foto. Por favor, intenta de nuevo.")
     }
-  }
-
-  // Si el registro fue exitoso, mostrar mensaje de confirmación
-  if (registrationSuccess) {
-    return (
-      <main className="flex min-h-screen flex-col items-center justify-center relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-b from-[#6a3de8] via-[#3b82f6] to-[#06b6d4] z-0" />
-        <div className="z-10 bg-white/20 backdrop-blur-md p-8 rounded-xl border border-white/20 text-center">
-          <Check className="h-16 w-16 text-white mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-white mb-2">¡Registro Completado!</h2>
-          <p className="text-white mb-4">
-            Tu cuenta ha sido creada correctamente. Redirigiendo a la pantalla de inicio de sesión...
-          </p>
-        </div>
-      </main>
-    )
   }
 
   return (
@@ -608,8 +530,8 @@ export default function RegisterPage() {
               )}
             </div>
 
-            {/* Canvas oculto para capturar la foto - Asegurarse de que siempre esté renderizado */}
-            <canvas ref={canvasRef} className="hidden" width="640" height="480" />
+            {/* Canvas oculto para capturar la foto */}
+            <canvas ref={canvasRef} className="hidden" />
 
             {/* Input para subir foto */}
             <input

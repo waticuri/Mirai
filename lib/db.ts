@@ -5,7 +5,7 @@ export interface User {
   email: string
   photoUrl: string // Base64 de la imagen
   createdAt: string
-  hasCompletedPairing?: boolean
+  hasConnectedDevice?: boolean
 }
 
 export interface FamilyMember {
@@ -19,9 +19,9 @@ export interface FamilyMember {
 
 // Clase para manejar la base de datos de usuarios
 export class UserDatabase {
-  static USERS_KEY = "mirai_users" // Cambiado a static público para acceso directo
-  static CURRENT_USER_KEY = "mirai_current_user"
-  static FAMILY_MEMBERS_KEY = "mirai_family_members"
+  private static USERS_KEY = "mirai_users"
+  private static CURRENT_USER_KEY = "mirai_current_user"
+  private static FAMILY_MEMBERS_KEY = "mirai_family_members"
 
   // Obtener todos los usuarios
   static getUsers(): User[] {
@@ -39,21 +39,14 @@ export class UserDatabase {
   }
 
   // Guardar todos los usuarios
-  static saveUsers(users: User[]): void {
+  private static saveUsers(users: User[]): void {
     if (typeof window === "undefined") return
-
-    try {
-      localStorage.setItem(this.USERS_KEY, JSON.stringify(users))
-      console.log("Usuarios guardados correctamente:", users)
-    } catch (e) {
-      console.error("Error saving users to localStorage:", e)
-    }
+    localStorage.setItem(this.USERS_KEY, JSON.stringify(users))
   }
 
   // Crear un nuevo usuario
   static createUser(userData: Omit<User, "id" | "createdAt">): User {
     const users = this.getUsers()
-    console.log("Usuarios existentes:", users)
 
     // Verificar si el email ya existe
     if (users.some((user) => user.email === userData.email)) {
@@ -64,11 +57,11 @@ export class UserDatabase {
       ...userData,
       id: crypto.randomUUID(),
       createdAt: new Date().toISOString(),
+      hasConnectedDevice: false,
     }
 
     users.push(newUser)
     this.saveUsers(users)
-    console.log("Nuevo usuario creado:", newUser)
 
     return newUser
   }
@@ -106,7 +99,6 @@ export class UserDatabase {
   static setCurrentUser(userId: string): void {
     if (typeof window === "undefined") return
     localStorage.setItem(this.CURRENT_USER_KEY, userId)
-    console.log("Usuario actual establecido:", userId)
   }
 
   // Obtener usuario actual
@@ -195,17 +187,5 @@ export class UserDatabase {
     this.saveFamilyMembers(filteredMembers)
 
     return filteredMembers.length < initialLength
-  }
-
-  // Limpiar toda la base de datos
-  static clearDatabase(): void {
-    if (typeof window === "undefined") return
-
-    // Eliminar todos los datos almacenados
-    localStorage.removeItem(this.USERS_KEY)
-    localStorage.removeItem(this.CURRENT_USER_KEY)
-    localStorage.removeItem(this.FAMILY_MEMBERS_KEY)
-
-    console.log("Base de datos limpiada correctamente")
   }
 }

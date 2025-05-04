@@ -3,18 +3,17 @@
 import { useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
-import { ChevronLeft, Eye, Mic, MicOff, Bell, MapPin, Battery, Wifi, HelpCircle } from "lucide-react"
+import { ChevronLeft, Eye, Mic, Bell, MapPin, Battery, Wifi, HelpCircle } from "lucide-react"
 import { useSpeechSynthesis } from "@/hooks/use-speech-synthesis"
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition"
 
 export default function TutorialPage() {
   const router = useRouter()
   const { speak } = useSpeechSynthesis()
-  const { startListening, stopListening, transcript, resetTranscript, listening, error } = useSpeechRecognition()
+  const { startListening, stopListening, transcript, resetTranscript, listening } = useSpeechRecognition()
   const [isLoaded, setIsLoaded] = useState(false)
   const [activeFeature, setActiveFeature] = useState<number | null>(null)
   const checkIntervalRef = useRef<NodeJS.Timeout | null>(null)
-  const [microphoneActive, setMicrophoneActive] = useState(true)
 
   // Lista de funcionalidades con ejemplos de comandos
   const features = [
@@ -76,10 +75,6 @@ export default function TutorialPage() {
       )
     } else if (command.includes("siguiente")) {
       handleNextFeature()
-    } else if (command.includes("micrófono apagado") || command.includes("desactivar micrófono")) {
-      handleToggleMicrophone(false)
-    } else if (command.includes("micrófono encendido") || command.includes("activar micrófono")) {
-      handleToggleMicrophone(true)
     }
 
     // Buscar si el comando menciona alguna funcionalidad
@@ -101,23 +96,6 @@ export default function TutorialPage() {
     resetTranscript()
   }, [transcript, speak, resetTranscript])
 
-  // Monitor speech recognition errors
-  useEffect(() => {
-    if (error) {
-      console.log("Speech recognition error detected in tutorial:", error)
-
-      // If we're supposed to be listening but got an error, try to restart
-      if (microphoneActive && !listening) {
-        console.log("Attempting to restart speech recognition after error in tutorial")
-        const restartTimer = setTimeout(() => {
-          startListening()
-        }, 2000)
-
-        return () => clearTimeout(restartTimer)
-      }
-    }
-  }, [error, listening, startListening, microphoneActive])
-
   // Inicializar página
   useEffect(() => {
     setIsLoaded(true)
@@ -127,9 +105,15 @@ export default function TutorialPage() {
         "Tutorial de funcionalidades. Aquí puedes aprender a usar todas las características de tus gafas Mirai. Las funciones disponibles son: Reconocimiento visual, Comandos de voz, Notificaciones, Navegación, Gestión de batería y Conectividad. Selecciona una función, di su nombre o di 'siguiente' para navegar entre ellas.",
         () => {
           // Iniciar reconocimiento de voz solo después de que termine de hablar
-          if (microphoneActive) {
-            startListening()
-          }
+          startListening()
+
+          // Set up a less frequent check to ensure speech recognition is working
+          checkIntervalRef.current = setInterval(() => {
+            if (!listening) {
+              console.log("Speech recognition not active, attempting to restart...")
+              startListening()
+            }
+          }, 10000) // Check every 10 seconds
         },
       )
     }, 1000)
@@ -139,7 +123,7 @@ export default function TutorialPage() {
       if (checkIntervalRef.current) clearInterval(checkIntervalRef.current)
       stopListening()
     }
-  }, [speak, startListening, stopListening, microphoneActive])
+  }, [speak, startListening, stopListening])
 
   const handleBack = () => {
     speak("Volviendo al panel principal")
@@ -155,9 +139,7 @@ export default function TutorialPage() {
       // Hablar tanto la descripción como el comando de ejemplo
       speak(`${feature.title}. ${feature.description} Ejemplo de comando: ${feature.command}`, () => {
         // Reanudar reconocimiento después de hablar
-        if (microphoneActive) {
-          startListening()
-        }
+        startListening()
       })
     }
   }
@@ -180,18 +162,6 @@ export default function TutorialPage() {
     handleFeatureClick(nextFeatureId)
   }
 
-  // Toggle microphone on/off
-  const handleToggleMicrophone = (active: boolean) => {
-    setMicrophoneActive(active)
-    if (active) {
-      speak("Micrófono activado")
-      startListening()
-    } else {
-      speak("Micrófono desactivado")
-      stopListening()
-    }
-  }
-
   return (
     <main className="flex min-h-screen flex-col bg-white">
       {/* Header con gradiente */}
@@ -201,19 +171,6 @@ export default function TutorialPage() {
           <span className="ml-2">Volver</span>
         </button>
         <h1 className="text-white text-lg font-medium flex-1 text-center mr-8">Tutorial de funcionalidades</h1>
-
-        {/* Microphone toggle button */}
-        <button
-          onClick={() => handleToggleMicrophone(!microphoneActive)}
-          className="text-white"
-          aria-label={microphoneActive ? "Desactivar micrófono" : "Activar micrófono"}
-        >
-          {microphoneActive ? (
-            <Mic className={`h-5 w-5 ${listening ? "animate-pulse" : ""}`} />
-          ) : (
-            <MicOff className="h-5 w-5" />
-          )}
-        </button>
       </header>
 
       {/* Contenido principal */}
@@ -282,11 +239,7 @@ export default function TutorialPage() {
             stopListening()
             speak(
               "Para navegar por el tutorial, puedes decir el nombre de la función sobre la que quieres saber más, decir 'siguiente' para pasar a la siguiente función, o decir 'volver' para regresar al panel principal. También puedes probar los comandos de ejemplo diciendo exactamente lo que ves en cada función.",
-              () => {
-                if (microphoneActive) {
-                  startListening()
-                }
-              },
+              () => startListening(),
             )
           }}
           className="mt-6 flex items-center justify-center w-full py-3 text-[#6a3de8] font-medium"

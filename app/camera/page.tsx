@@ -151,20 +151,24 @@ export default function CameraPage() {
       if (recognizedUser) {
         speak(`Reconocimiento facial completado. Bienvenido, ${recognizedUser.name}.`)
 
-        // Check if this is the first login (hasn't paired device yet)
-        if (!recognizedUser.hasCompletedPairing) {
-          speak("Es tu primera vez iniciando sesión. Necesitamos conectar tus gafas Mirai.")
-          setTimeout(() => {
-            router.push("/pairing")
-          }, 1500)
-        } else {
-          speak("Iniciando sesión.")
-          setTimeout(() => {
-            router.push("/dashboard")
-          }, 1500)
+        // Check if this is the first login
+        const isFirstLogin = !recognizedUser.hasConnectedDevice
+
+        // Update user to mark device as connected for future logins
+        if (isFirstLogin && recognizedUser.id) {
+          UserDatabase.updateUser(recognizedUser.id, { hasConnectedDevice: true })
         }
+
+        // Redirect to device connection page for first login, otherwise to dashboard
+        setTimeout(() => {
+          if (isFirstLogin) {
+            router.push("/connect-device")
+          } else {
+            router.push("/dashboard")
+          }
+        }, 1500)
       } else {
-        // If no users registered
+        // Si no hay usuarios registrados
         speak("No se encontró ningún usuario registrado. Por favor, regístrate primero.")
         setTimeout(() => {
           router.push("/register")
