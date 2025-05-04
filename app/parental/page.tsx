@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { ChevronLeft, Plus, Triangle, Square, Circle } from "lucide-react"
+import { ChevronLeft, Plus, Users } from "lucide-react"
 import { useSpeechSynthesis } from "@/hooks/use-speech-synthesis"
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition"
 
@@ -16,16 +16,12 @@ interface Person {
 export default function ParentalPage() {
   const router = useRouter()
   const { speak } = useSpeechSynthesis()
-  const { startListening, stopListening, transcript, resetTranscript } = useSpeechRecognition()
+  const { startListening, stopListening, transcript, resetTranscript, listening } = useSpeechRecognition()
   const [isLoaded, setIsLoaded] = useState(false)
+  const checkIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
-  // Lista de personas
-  const [people, setPeople] = useState<Person[]>([
-    { id: 1, name: "Rodrigo", relation: "Padre", avatar: "R" },
-    { id: 2, name: "Sofia", relation: "Madre", avatar: "S" },
-    { id: 3, name: "Juan", relation: "Hermano", avatar: "J" },
-    { id: 4, name: "Firulais", relation: "Mascota", avatar: "F" },
-  ])
+  // Lista de personas - comienza vacía
+  const [people, setPeople] = useState<Person[]>([])
 
   // Manejar comandos de voz
   useEffect(() => {
@@ -60,36 +56,57 @@ export default function ParentalPage() {
     resetTranscript()
   }, [transcript, people, speak, resetTranscript])
 
+  // Modificar la inicialización para esperar a que termine de hablar
+
   // Inicializar página
   useEffect(() => {
     setIsLoaded(true)
 
     const timer = setTimeout(() => {
       speak(
-        "Cercanía parental. Aquí puedes configurar alertas cuando tus familiares o mascotas estén cerca. Tienes 4 personas configuradas: Rodrigo, Sofia, Juan y Firulais.",
+        "Cercanía parental. Aquí puedes configurar alertas cuando tus familiares o mascotas estén cerca. No tienes personas configuradas. Pulsa el botón 'Agregar familiar' o di 'agregar familiar' para comenzar.",
+        () => {
+          // Iniciar reconocimiento de voz solo después de que termine de hablar
+          startListening()
+
+          // Set up a less frequent check to ensure speech recognition is working
+          checkIntervalRef.current = setInterval(() => {
+            if (!listening) {
+              console.log("Speech recognition not active, attempting to restart...")
+              startListening()
+            }
+          }, 10000) // Check every 10 seconds
+        },
       )
-      startListening()
     }, 1000)
 
     return () => {
-      clearTimeout(timer)
+      if (timer) clearTimeout(timer)
+      if (checkIntervalRef.current) clearInterval(checkIntervalRef.current)
       stopListening()
     }
   }, [speak, startListening, stopListening])
 
+  // Modificar el manejo de comandos para pausar y reanudar el reconocimiento
   const handleBack = () => {
-    speak("Volviendo al panel principal")
-    router.push("/dashboard")
+    stopListening()
+    speak("Volviendo al panel principal", () => {
+      router.push("/dashboard")
+    })
   }
 
   const handleAddPerson = () => {
-    speak("Abriendo formulario para agregar un familiar")
-    router.push("/parental/agregar")
+    stopListening()
+    speak("Abriendo formulario para agregar un familiar", () => {
+      router.push("/parental/agregar")
+    })
   }
 
   const handlePersonClick = (person: Person) => {
+    stopListening()
     speak(
       `Has seleccionado a ${person.name}, ${person.relation}. Aquí podrás configurar las alertas de proximidad para esta persona.`,
+      () => startListening(),
     )
   }
 
@@ -108,31 +125,37 @@ export default function ParentalPage() {
       <div className="flex-1 p-4 max-w-md mx-auto w-full">
         <h2 className="text-2xl font-bold mb-6">Cercanía Parental</h2>
 
-        {/* Lista de personas */}
-        <div className="space-y-3 mb-8">
-          {people.map((person) => (
-            <div
-              key={person.id}
-              onClick={() => handlePersonClick(person)}
-              className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-200"
-            >
-              <div className="flex items-center">
-                <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center mr-3">
-                  <span className="text-purple-800 font-medium">A</span>
-                </div>
-                <div>
-                  <h3 className="font-medium">{person.name}</h3>
-                  <p className="text-sm text-gray-500">{person.relation}</p>
+        {/* Lista de personas o mensaje de lista vacía */}
+        {people.length > 0 ? (
+          <div className="space-y-3 mb-8">
+            {people.map((person) => (
+              <div
+                key={person.id}
+                onClick={() => handlePersonClick(person)}
+                className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-200"
+              >
+                <div className="flex items-center">
+                  <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center mr-3">
+                    <span className="text-purple-800 font-medium">{person.avatar}</span>
+                  </div>
+                  <div>
+                    <h3 className="font-medium">{person.name}</h3>
+                    <p className="text-sm text-gray-500">{person.relation}</p>
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center space-x-1">
-                <Triangle className="h-5 w-5 text-gray-400" />
-                <Square className="h-5 w-5 text-gray-400" />
-                <Circle className="h-5 w-5 text-gray-400" />
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-10 mb-8 bg-gray-50 rounded-xl border border-gray-200">
+            <Users className="h-16 w-16 text-gray-300 mb-4" />
+            <p className="text-gray-500 text-center">
+              No hay familiares configurados.
+              <br />
+              Agrega a tus familiares o mascotas para recibir alertas de proximidad.
+            </p>
+          </div>
+        )}
 
         {/* Botón agregar familiar */}
         <div className="flex flex-col items-center">

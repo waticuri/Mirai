@@ -30,7 +30,7 @@ export default function CameraPage() {
     setTimeout(() => {
       setShowWelcome(false)
       setIsCameraActive(true)
-      speak("Acércate a la cámara para iniciar sesión")
+      speak("Acércate a la cámara para iniciar sesión. Comparando con tu foto registrada.")
 
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         navigator.mediaDevices
@@ -144,7 +144,7 @@ export default function CameraPage() {
   // Simular reconocimiento facial
   const simulateFacialRecognition = () => {
     setTimeout(() => {
-      speak("Reconocimiento facial completado. Iniciando sesión.")
+      speak("Reconocimiento facial completado. Coincidencia encontrada con tu foto registrada. Iniciando sesión.")
       setTimeout(() => {
         router.push("/dashboard")
       }, 1500)

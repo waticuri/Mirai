@@ -15,9 +15,10 @@ import { Label } from "@/components/ui/label"
 export default function AddFamilyMemberPage() {
   const router = useRouter()
   const { speak } = useSpeechSynthesis()
-  const { startListening, stopListening, transcript, resetTranscript } = useSpeechRecognition()
+  const { startListening, stopListening, transcript, resetTranscript, listening } = useSpeechRecognition()
   const [isLoaded, setIsLoaded] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const checkIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   // Form state
   const [name, setName] = useState("")
@@ -46,6 +47,8 @@ export default function AddFamilyMemberPage() {
     resetTranscript()
   }, [transcript, speak, resetTranscript])
 
+  // Modificar la inicialización para esperar a que termine de hablar
+
   // Inicializar página
   useEffect(() => {
     setIsLoaded(true)
@@ -53,31 +56,49 @@ export default function AddFamilyMemberPage() {
     const timer = setTimeout(() => {
       speak(
         "Formulario para agregar un familiar. Por favor, completa los campos requeridos. Puedes usar comandos de voz para navegar.",
+        () => {
+          // Iniciar reconocimiento de voz solo después de que termine de hablar
+          startListening()
+
+          // Set up a less frequent check to ensure speech recognition is working
+          checkIntervalRef.current = setInterval(() => {
+            if (!listening) {
+              console.log("Speech recognition not active, attempting to restart...")
+              startListening()
+            }
+          }, 10000) // Check every 10 seconds
+        },
       )
-      startListening()
     }, 1000)
 
     return () => {
-      clearTimeout(timer)
+      if (timer) clearTimeout(timer)
+      if (checkIntervalRef.current) clearInterval(checkIntervalRef.current)
       stopListening()
     }
   }, [speak, startListening, stopListening])
 
+  // Modificar el manejo de comandos para pausar y reanudar el reconocimiento
   const handleBack = () => {
-    speak("Cancelando. Volviendo a la pantalla anterior.")
-    router.push("/parental")
+    stopListening()
+    speak("Cancelando. Volviendo a la pantalla anterior.", () => {
+      router.push("/parental")
+    })
   }
 
   const handleSubmit = () => {
     if (!name || !relation) {
-      speak("Por favor completa los campos obligatorios de nombre y parentesco.")
+      stopListening()
+      speak("Por favor completa los campos obligatorios de nombre y parentesco.", () => startListening())
       return
     }
 
-    speak("Familiar agregado correctamente. Volviendo a la lista de familiares.")
-    setTimeout(() => {
-      router.push("/parental")
-    }, 1500)
+    stopListening()
+    speak("Familiar agregado correctamente. Volviendo a la lista de familiares.", () => {
+      setTimeout(() => {
+        router.push("/parental")
+      }, 500)
+    })
   }
 
   const handlePhotoClick = () => {

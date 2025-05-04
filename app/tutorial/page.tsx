@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
 import { ChevronLeft, Eye, Mic, Bell, MapPin, Battery, Wifi, HelpCircle } from "lucide-react"
@@ -10,9 +10,10 @@ import { useSpeechRecognition } from "@/hooks/use-speech-recognition"
 export default function TutorialPage() {
   const router = useRouter()
   const { speak } = useSpeechSynthesis()
-  const { startListening, stopListening, transcript, resetTranscript } = useSpeechRecognition()
+  const { startListening, stopListening, transcript, resetTranscript, listening } = useSpeechRecognition()
   const [isLoaded, setIsLoaded] = useState(false)
   const [activeFeature, setActiveFeature] = useState<number | null>(null)
+  const checkIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   // Lista de funcionalidades con ejemplos de comandos
   const features = [
@@ -70,8 +71,10 @@ export default function TutorialPage() {
       handleBack()
     } else if (command.includes("ayuda") || command.includes("asistencia")) {
       speak(
-        "Para navegar por el tutorial, puedes decir el nombre de la función sobre la que quieres saber más, o decir 'volver' para regresar al panel principal.",
+        "Para navegar por el tutorial, puedes decir el nombre de la función sobre la que quieres saber más, decir 'siguiente' para pasar a la siguiente función, o decir 'volver' para regresar al panel principal.",
       )
+    } else if (command.includes("siguiente")) {
+      handleNextFeature()
     }
 
     // Buscar si el comando menciona alguna funcionalidad
@@ -99,13 +102,25 @@ export default function TutorialPage() {
 
     const timer = setTimeout(() => {
       speak(
-        "Tutorial de funcionalidades. Aquí puedes aprender a usar todas las características de tus gafas Mirai. Selecciona una función o di su nombre para obtener más información. Cada función incluye un ejemplo de comando de voz que puedes probar.",
+        "Tutorial de funcionalidades. Aquí puedes aprender a usar todas las características de tus gafas Mirai. Las funciones disponibles son: Reconocimiento visual, Comandos de voz, Notificaciones, Navegación, Gestión de batería y Conectividad. Selecciona una función, di su nombre o di 'siguiente' para navegar entre ellas.",
+        () => {
+          // Iniciar reconocimiento de voz solo después de que termine de hablar
+          startListening()
+
+          // Set up a less frequent check to ensure speech recognition is working
+          checkIntervalRef.current = setInterval(() => {
+            if (!listening) {
+              console.log("Speech recognition not active, attempting to restart...")
+              startListening()
+            }
+          }, 10000) // Check every 10 seconds
+        },
       )
-      startListening()
     }, 1000)
 
     return () => {
-      clearTimeout(timer)
+      if (timer) clearTimeout(timer)
+      if (checkIntervalRef.current) clearInterval(checkIntervalRef.current)
       stopListening()
     }
   }, [speak, startListening, stopListening])
@@ -119,9 +134,32 @@ export default function TutorialPage() {
     setActiveFeature(id)
     const feature = features.find((f) => f.id === id)
     if (feature) {
+      // Detener reconocimiento mientras habla
+      stopListening()
       // Hablar tanto la descripción como el comando de ejemplo
-      speak(`${feature.title}. ${feature.description} Ejemplo de comando: ${feature.command}`)
+      speak(`${feature.title}. ${feature.description} Ejemplo de comando: ${feature.command}`, () => {
+        // Reanudar reconocimiento después de hablar
+        startListening()
+      })
     }
+  }
+
+  const handleNextFeature = () => {
+    // Si no hay función activa, seleccionar la primera
+    if (activeFeature === null) {
+      handleFeatureClick(1)
+      return
+    }
+
+    // Encontrar el índice de la función actual
+    const currentIndex = features.findIndex((f) => f.id === activeFeature)
+
+    // Calcular el ID de la siguiente función (con ciclo al principio si es la última)
+    const nextIndex = (currentIndex + 1) % features.length
+    const nextFeatureId = features[nextIndex].id
+
+    // Activar la siguiente función
+    handleFeatureClick(nextFeatureId)
   }
 
   return (
@@ -197,11 +235,13 @@ export default function TutorialPage() {
 
         {/* Botón de ayuda */}
         <button
-          onClick={() =>
+          onClick={() => {
+            stopListening()
             speak(
-              "Para navegar por el tutorial, puedes decir el nombre de la función sobre la que quieres saber más, o decir 'volver' para regresar al panel principal. También puedes probar los comandos de ejemplo diciendo exactamente lo que ves en cada función.",
+              "Para navegar por el tutorial, puedes decir el nombre de la función sobre la que quieres saber más, decir 'siguiente' para pasar a la siguiente función, o decir 'volver' para regresar al panel principal. También puedes probar los comandos de ejemplo diciendo exactamente lo que ves en cada función.",
+              () => startListening(),
             )
-          }
+          }}
           className="mt-6 flex items-center justify-center w-full py-3 text-[#6a3de8] font-medium"
         >
           <HelpCircle className="h-5 w-5 mr-2" />

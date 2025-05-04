@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
 import { Settings, Users, LogOut, ChevronRight } from "lucide-react"
@@ -10,8 +10,9 @@ import { useSpeechRecognition } from "@/hooks/use-speech-recognition"
 export default function Dashboard() {
   const router = useRouter()
   const { speak } = useSpeechSynthesis()
-  const { startListening, stopListening, transcript, resetTranscript } = useSpeechRecognition()
+  const { startListening, stopListening, transcript, resetTranscript, listening } = useSpeechRecognition()
   const [isLoaded, setIsLoaded] = useState(false)
+  const checkIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   // Manejar comandos de voz
   useEffect(() => {
@@ -40,12 +41,23 @@ export default function Dashboard() {
     setIsLoaded(true)
 
     const timer = setTimeout(() => {
-      speak("Bienvenido al panel de control. Tus gafas Mirai están conectadas y con 98% de batería.")
-      startListening()
+      speak("Bienvenido al panel de control. Tus gafas Mirai están conectadas y con 98% de batería.", () => {
+        // Iniciar reconocimiento de voz solo después de que termine de hablar
+        startListening()
+
+        // Set up a less frequent check to ensure speech recognition is working
+        checkIntervalRef.current = setInterval(() => {
+          if (!listening) {
+            console.log("Speech recognition not active, attempting to restart...")
+            startListening()
+          }
+        }, 10000) // Check every 10 seconds
+      })
     }, 1000)
 
     return () => {
-      clearTimeout(timer)
+      if (timer) clearTimeout(timer)
+      if (checkIntervalRef.current) clearInterval(checkIntervalRef.current)
       stopListening()
     }
   }, [speak, startListening, stopListening])

@@ -29,7 +29,7 @@ export function useSpeechSynthesis() {
   }, [])
 
   const speak = useCallback(
-    (text: string) => {
+    (text: string, onEnd?: () => void) => {
       if (!supported) return
 
       // Cancel any ongoing speech
@@ -48,8 +48,14 @@ export function useSpeechSynthesis() {
       utterance.volume = 1
 
       utterance.onstart = () => setSpeaking(true)
-      utterance.onend = () => setSpeaking(false)
-      utterance.onerror = () => setSpeaking(false)
+      utterance.onend = () => {
+        setSpeaking(false)
+        if (onEnd) onEnd()
+      }
+      utterance.onerror = () => {
+        setSpeaking(false)
+        if (onEnd) onEnd()
+      }
 
       window.speechSynthesis.speak(utterance)
     },

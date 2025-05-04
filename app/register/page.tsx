@@ -2,31 +2,54 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
+import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useSpeechSynthesis } from "@/hooks/use-speech-synthesis"
+import { Camera, Upload, X, Check } from "lucide-react"
 
 export default function RegisterPage() {
   const router = useRouter()
   const { speak } = useSpeechSynthesis()
   const [isLoaded, setIsLoaded] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+
+  // Estado para la captura de cámara
+  const [isCameraActive, setIsCameraActive] = useState(false)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
 
   useEffect(() => {
     setIsLoaded(true)
     // Reproducir mensaje de bienvenida después de un breve retraso
     const timer = setTimeout(() => {
-      speak("Pantalla de registro. Por favor, completa tus datos o pide asistencia por voz.")
+      speak(
+        "Pantalla de registro. Por favor, completa tus datos y agrega una foto para el reconocimiento facial. Puedes subir una foto o capturarla con la cámara.",
+      )
     }, 1000)
 
-    return () => clearTimeout(timer)
+    return () => {
+      clearTimeout(timer)
+      stopCamera()
+    }
   }, [speak])
 
   const handleRegister = (e: React.FormEvent) => {
     e.preventDefault()
-    speak("Registro completado. Redirigiendo a la pantalla de inicio de sesión.")
+
+    if (!photoPreview) {
+      speak("Por favor, agrega una foto para el reconocimiento facial antes de continuar.")
+      return
+    }
+
+    speak(
+      "Registro completado. Tu foto ha sido guardada para el reconocimiento facial. Redirigiendo a la pantalla de inicio de sesión.",
+    )
     setTimeout(() => {
       router.push("/")
     }, 2000)
@@ -34,7 +57,88 @@ export default function RegisterPage() {
 
   const handleBack = () => {
     speak("Volviendo a la pantalla de inicio de sesión.")
+    stopCamera()
     router.push("/")
+  }
+
+  const handlePhotoClick = () => {
+    if (isCameraActive) return
+    fileInputRef.current?.click()
+  }
+
+  const handlePhotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      const reader = new FileReader()
+      reader.onload = () => {
+        setPhotoPreview(reader.result as string)
+        speak("Foto agregada correctamente. Esta foto se utilizará para el reconocimiento facial.")
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  const handleRemovePhoto = () => {
+    setPhotoPreview(null)
+    speak("Foto eliminada. Por favor, agrega una nueva foto para el reconocimiento facial.")
+  }
+
+  // Funciones para manejo de cámara
+  const startCamera = async () => {
+    try {
+      stopCamera() // Asegurarse de que no haya una cámara activa
+      setPhotoPreview(null)
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user" },
+      })
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        streamRef.current = stream
+        setIsCameraActive(true)
+        speak("Cámara activada. Posiciónate en el centro y pulsa el botón para capturar tu foto.")
+      }
+    } catch (err) {
+      console.error("Error al acceder a la cámara:", err)
+      speak("No se pudo acceder a la cámara. Por favor, intenta subir una foto.")
+    }
+  }
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop())
+      streamRef.current = null
+    }
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null
+    }
+
+    setIsCameraActive(false)
+  }
+
+  const capturePhoto = () => {
+    if (!videoRef.current || !canvasRef.current) return
+
+    const context = canvasRef.current.getContext("2d")
+    if (!context) return
+
+    // Establecer dimensiones del canvas al tamaño del video
+    canvasRef.current.width = videoRef.current.videoWidth
+    canvasRef.current.height = videoRef.current.videoHeight
+
+    // Dibujar el frame actual del video en el canvas
+    context.drawImage(videoRef.current, 0, 0, videoRef.current.videoWidth, videoRef.current.videoHeight)
+
+    // Convertir el canvas a una URL de datos
+    const photoData = canvasRef.current.toDataURL("image/png")
+    setPhotoPreview(photoData)
+
+    // Detener la cámara
+    stopCamera()
+
+    speak("Foto capturada correctamente. Esta foto se utilizará para el reconocimiento facial.")
   }
 
   return (
@@ -54,6 +158,95 @@ export default function RegisterPage() {
           onSubmit={handleRegister}
           className="w-full space-y-6 bg-white/10 backdrop-blur-md p-6 rounded-xl border border-white/20"
         >
+          {/* Foto para reconocimiento facial */}
+          <div className="flex flex-col items-center mb-6">
+            <p className="text-white text-sm mb-3">Foto para reconocimiento facial</p>
+            <div
+              className="w-32 h-32 rounded-full bg-white/20 flex items-center justify-center overflow-hidden relative cursor-pointer"
+              onClick={isCameraActive ? undefined : handlePhotoClick}
+            >
+              {photoPreview ? (
+                <>
+                  <Image src={photoPreview || "/placeholder.svg"} alt="Vista previa" fill className="object-cover" />
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleRemovePhoto()
+                    }}
+                    className="absolute top-1 right-1 bg-white rounded-full p-1"
+                    aria-label="Eliminar foto"
+                  >
+                    <X className="h-4 w-4 text-gray-600" />
+                  </button>
+                </>
+              ) : isCameraActive ? (
+                <video ref={videoRef} autoPlay playsInline className="absolute inset-0 w-full h-full object-cover" />
+              ) : (
+                <Camera className="h-10 w-10 text-white" />
+              )}
+            </div>
+
+            {/* Canvas oculto para capturar la foto */}
+            <canvas ref={canvasRef} className="hidden" />
+
+            {/* Input para subir foto */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="image/*"
+              className="hidden"
+              onChange={handlePhotoChange}
+              aria-label="Subir foto"
+            />
+
+            {/* Botones para manejo de foto */}
+            <div className="flex gap-3 mt-3">
+              {isCameraActive ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={capturePhoto}
+                    className="text-white text-sm flex items-center hover:underline"
+                  >
+                    <Check className="h-4 w-4 mr-1" />
+                    Capturar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      stopCamera()
+                      speak("Cámara desactivada.")
+                    }}
+                    className="text-white text-sm flex items-center hover:underline"
+                  >
+                    <X className="h-4 w-4 mr-1" />
+                    Cancelar
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={handlePhotoClick}
+                    className="text-white text-sm flex items-center hover:underline"
+                  >
+                    <Upload className="h-4 w-4 mr-1" />
+                    {photoPreview ? "Cambiar foto" : "Subir foto"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={startCamera}
+                    className="text-white text-sm flex items-center hover:underline"
+                  >
+                    <Camera className="h-4 w-4 mr-1" />
+                    Usar cámara
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+
           <div className="space-y-2">
             <Label htmlFor="name" className="text-white">
               Nombre completo
