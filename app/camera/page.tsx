@@ -149,19 +149,28 @@ export default function CameraPage() {
       const recognizedUser = UserDatabase.simulateFacialRecognition()
 
       if (recognizedUser) {
-        speak(`Reconocimiento facial completado. Bienvenido, ${recognizedUser.name}. Iniciando sesión.`)
+        speak(`Reconocimiento facial completado. Bienvenido, ${recognizedUser.name}.`)
+
+        // Check if this is the first login (hasn't paired device yet)
+        if (!recognizedUser.hasCompletedPairing) {
+          speak("Es tu primera vez iniciando sesión. Necesitamos conectar tus gafas Mirai.")
+          setTimeout(() => {
+            router.push("/pairing")
+          }, 1500)
+        } else {
+          speak("Iniciando sesión.")
+          setTimeout(() => {
+            router.push("/dashboard")
+          }, 1500)
+        }
       } else {
-        // Si no hay usuarios registrados
+        // If no users registered
         speak("No se encontró ningún usuario registrado. Por favor, regístrate primero.")
         setTimeout(() => {
           router.push("/register")
         }, 1500)
         return
       }
-
-      setTimeout(() => {
-        router.push("/dashboard")
-      }, 1500)
     }, 3000)
   }
 

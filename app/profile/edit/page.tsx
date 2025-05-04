@@ -11,9 +11,9 @@ import { useSpeechRecognition } from "@/hooks/use-speech-recognition"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { UserDatabase } from "@/lib/db"
+import { UserDatabase, type User } from "@/lib/db"
 
-export default function AddFamilyMemberPage() {
+export default function EditProfilePage() {
   const router = useRouter()
   const { speak } = useSpeechSynthesis()
   const { startListening, stopListening, transcript, resetTranscript, listening } = useSpeechRecognition()
@@ -21,10 +21,12 @@ export default function AddFamilyMemberPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const checkIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
+  // Usuario actual
+  const [currentUser, setCurrentUser] = useState<User | null>(null)
+
   // Form state
   const [name, setName] = useState("")
-  const [relation, setRelation] = useState("")
-  const [phone, setPhone] = useState("")
+  const [email, setEmail] = useState("")
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
@@ -40,6 +42,23 @@ export default function AddFamilyMemberPage() {
   const [countdownActive, setCountdownActive] = useState(false)
   const [countdown, setCountdown] = useState(3)
 
+  // Cargar datos del usuario actual
+  useEffect(() => {
+    const user = UserDatabase.getCurrentUser()
+    if (!user) {
+      speak("No hay sesión activa. Redirigiendo a la pantalla de inicio de sesión.")
+      setTimeout(() => {
+        router.push("/")
+      }, 1500)
+      return
+    }
+
+    setCurrentUser(user)
+    setName(user.name)
+    setEmail(user.email)
+    setPhotoPreview(user.photoUrl)
+  }, [router, speak])
+
   // Manejar comandos de voz
   useEffect(() => {
     if (!transcript) return
@@ -50,7 +69,7 @@ export default function AddFamilyMemberPage() {
     // Comandos de navegación
     if (command.includes("volver") || command.includes("atrás") || command.includes("cancelar")) {
       handleBack()
-    } else if (command.includes("guardar") || command.includes("agregar") || command.includes("añadir")) {
+    } else if (command.includes("guardar") || command.includes("actualizar")) {
       handleSubmit()
     } else if (command.includes("modo ayuda")) {
       toggleHelpMode()
@@ -61,29 +80,21 @@ export default function AddFamilyMemberPage() {
     // Comandos para campos de formulario
     else if (command.includes("nombre")) {
       focusField("name")
-    } else if (command.includes("relación") || command.includes("parentesco")) {
-      focusField("relation")
-    } else if (command.includes("teléfono") || command.includes("móvil") || command.includes("celular")) {
-      focusField("phone")
+    } else if (command.includes("correo") || command.includes("email")) {
+      focusField("email")
     }
 
     // Comandos para dictado de texto
     else if (currentFocus === "name" && !command.includes("nombre")) {
       setName(command.trim())
-      speak(`Nombre establecido como: ${command.trim()}. Di 'relación' para continuar con el siguiente campo.`)
-    } else if (currentFocus === "relation" && !command.includes("relación") && !command.includes("parentesco")) {
-      setRelation(command.trim())
-      speak(`Relación establecida como: ${command.trim()}. Di 'teléfono' para continuar con el siguiente campo.`)
-    } else if (
-      currentFocus === "phone" &&
-      !command.includes("teléfono") &&
-      !command.includes("móvil") &&
-      !command.includes("celular")
-    ) {
-      // Formatear el número de teléfono (eliminar espacios y caracteres no numéricos)
-      const formattedPhone = command.trim().replace(/[^\d]/g, "")
-      setPhone(formattedPhone)
-      speak(`Teléfono establecido como: ${formattedPhone}. Di 'foto' para continuar con la foto.`)
+      speak(`Nombre establecido como: ${command.trim()}. Di 'correo' para continuar con el siguiente campo.`)
+    } else if (currentFocus === "email" && !command.includes("correo") && !command.includes("email")) {
+      // Intentar formatear el correo electrónico dictado
+      const formattedEmail = formatDictatedEmail(command.trim())
+      setEmail(formattedEmail)
+      speak(
+        `Correo electrónico establecido como: ${formatEmailForSpeech(formattedEmail)}. Di 'foto' para continuar con la foto.`,
+      )
     }
 
     // Comandos para foto
@@ -111,13 +122,84 @@ export default function AddFamilyMemberPage() {
     resetTranscript()
   }, [transcript, speak, resetTranscript, currentFocus, isCameraActive])
 
+  // Función para formatear email dictado
+  const formatDictatedEmail = (text: string): string => {
+    // Reemplazar palabras comunes con símbolos de email
+    let email = text
+      .toLowerCase()
+      .replace(/arroba/g, "@")
+      .replace(/punto/g, ".")
+      .replace(/guion/g, "-")
+      .replace(/guion bajo/g, "_")
+      .replace(/espacio/g, "")
+      .replace(/ /g, "") // Eliminar espacios
+
+    // Si no tiene @, intentar encontrar "at" o similares
+    if (!email.includes("@")) {
+      email = email.replace(/at/g, "@")
+    }
+
+    // Si no tiene punto, intentar encontrar "dot" o similares
+    if (!email.includes(".")) {
+      const dotIndex = email.lastIndexOf("dot")
+      if (dotIndex !== -1) {
+        email = email.substring(0, dotIndex) + "." + email.substring(dotIndex + 3)
+      }
+    }
+
+    return email
+  }
+
+  // Función para leer el email de forma más clara
+  const formatEmailForSpeech = (email: string): string => {
+    return email
+      .replace("@", " arroba ")
+      .replace(/\./g, " punto ")
+      .replace(/-/g, " guion ")
+      .replace(/_/g, " guion bajo ")
+  }
+
+  const focusField = (field: string) => {
+    setCurrentFocus(field)
+    const fieldElement = document.getElementById(field)
+    if (fieldElement) {
+      fieldElement.focus()
+
+      if (field === "name") {
+        speak("Campo de nombre activado. Por favor, di tu nombre completo.")
+      } else if (field === "email") {
+        speak(
+          "Campo de correo electrónico activado. Por favor, di tu correo electrónico, pronunciando 'arroba' y 'punto' donde corresponda.",
+        )
+      }
+    }
+  }
+
+  const toggleHelpMode = () => {
+    setHelpMode(!helpMode)
+    if (!helpMode) {
+      speak("Modo de ayuda activado. Ahora recibirás instrucciones detalladas para cada acción.")
+    } else {
+      speak("Modo de ayuda desactivado.")
+    }
+  }
+
+  const provideHelp = () => {
+    speak(
+      "Comandos disponibles: Di 'nombre' para editar tu nombre. Di 'correo' para editar tu correo electrónico. " +
+        "Di 'foto' o 'tomar foto' para activar la cámara. Di 'capturar' para tomar la foto cuando la cámara esté activa. " +
+        "Di 'guardar' o 'actualizar' para guardar los cambios. Di 'volver' para regresar al panel principal. " +
+        "Di 'modo ayuda' para activar o desactivar instrucciones detalladas.",
+    )
+  }
+
   // Inicializar página
   useEffect(() => {
     setIsLoaded(true)
 
     const timer = setTimeout(() => {
       speak(
-        "Agregar familiar. Aquí puedes añadir un familiar o mascota para recibir alertas de proximidad. Necesitarás proporcionar el nombre, relación, teléfono opcional y una foto. Puedes navegar por voz diciendo 'nombre', 'relación', 'teléfono', 'foto', 'ayuda', 'guardar' o 'volver'.",
+        "Edición de perfil. Aquí puedes modificar tu nombre, correo electrónico y foto. Puedes navegar por voz diciendo 'nombre', 'correo', 'foto', 'ayuda', 'guardar' o 'volver'. Para activar la ayuda detallada, di 'modo ayuda'.",
         () => {
           // Iniciar reconocimiento de voz solo después de que termine de hablar
           startListening()
@@ -141,78 +223,57 @@ export default function AddFamilyMemberPage() {
     }
   }, [speak, startListening, stopListening])
 
-  const focusField = (field: string) => {
-    setCurrentFocus(field)
-    const fieldElement = document.getElementById(field)
-    if (fieldElement) {
-      fieldElement.focus()
-
-      if (field === "name") {
-        speak("Campo de nombre activado. Por favor, di el nombre del familiar.")
-      } else if (field === "relation") {
-        speak(
-          "Campo de relación activado. Por favor, di la relación con esta persona, por ejemplo: padre, madre, hijo, mascota.",
-        )
-      } else if (field === "phone") {
-        speak(
-          "Campo de teléfono activado. Este campo es opcional. Por favor, di el número de teléfono si deseas agregarlo.",
-        )
-      }
-    }
-  }
-
-  const toggleHelpMode = () => {
-    setHelpMode(!helpMode)
-    if (!helpMode) {
-      speak("Modo de ayuda activado. Ahora recibirás instrucciones detalladas para cada acción.")
-    } else {
-      speak("Modo de ayuda desactivado.")
-    }
-  }
-
-  const provideHelp = () => {
-    speak(
-      "Comandos disponibles: Di 'nombre' para ingresar el nombre del familiar. Di 'relación' para indicar el parentesco. " +
-        "Di 'teléfono' para ingresar un número de contacto. Di 'foto' o 'tomar foto' para activar la cámara. " +
-        "Di 'capturar' para tomar la foto cuando la cámara esté activa. Di 'guardar' para añadir el familiar. " +
-        "Di 'volver' para regresar sin guardar cambios.",
-    )
-  }
-
   const handleBack = () => {
     stopListening()
-    speak("Volviendo a la pantalla de cercanía parental.", () => {
-      router.push("/parental")
+    speak("Volviendo al panel principal.", () => {
+      router.push("/dashboard")
     })
   }
 
   const handleSubmit = () => {
-    if (!name || !relation) {
+    if (!name || !email) {
       stopListening()
-      speak("Por favor completa los campos obligatorios de nombre y relación.", () => startListening())
+      speak("Por favor completa los campos obligatorios de nombre y correo electrónico.", () => startListening())
       setError("Por favor completa los campos obligatorios.")
       return
     }
 
     try {
-      // Crear el familiar en la base de datos
-      UserDatabase.createFamilyMember({
-        name,
-        relation,
-        phone,
-        photoUrl: photoPreview,
-      })
+      // Actualizar el usuario en la base de datos
+      if (currentUser) {
+        // En una aplicación real, aquí habría una llamada a la API para actualizar el usuario
+        // Para esta simulación, actualizamos el usuario en localStorage
 
-      setSuccess("Familiar agregado correctamente.")
-      stopListening()
-      speak("Familiar agregado correctamente. Volviendo a la pantalla de cercanía parental.", () => {
-        setTimeout(() => {
-          router.push("/parental")
-        }, 1500)
-      })
+        // Obtener todos los usuarios
+        const users = UserDatabase.getUsers()
+
+        // Encontrar y actualizar el usuario actual
+        const updatedUsers = users.map((user) => {
+          if (user.id === currentUser.id) {
+            return {
+              ...user,
+              name,
+              email,
+              photoUrl: photoPreview || user.photoUrl,
+            }
+          }
+          return user
+        })
+
+        // Guardar los usuarios actualizados
+        localStorage.setItem(UserDatabase["USERS_KEY"], JSON.stringify(updatedUsers))
+
+        setSuccess("Perfil actualizado correctamente.")
+        stopListening()
+        speak("Perfil actualizado correctamente. Volviendo al panel principal.", () => {
+          setTimeout(() => {
+            router.push("/dashboard")
+          }, 1500)
+        })
+      }
     } catch (err: any) {
-      setError("Error al agregar familiar. Inténtalo de nuevo.")
-      speak("Error al agregar familiar. Inténtalo de nuevo.")
+      setError("Error al actualizar el perfil. Inténtalo de nuevo.")
+      speak("Error al actualizar el perfil. Inténtalo de nuevo.")
     }
   }
 
@@ -238,7 +299,7 @@ export default function AddFamilyMemberPage() {
   }
 
   const handleCameraStart = () => {
-    speak("Activando cámara para tomar la foto.")
+    speak("Activando cámara para tomar tu foto.")
     startCamera()
   }
 
@@ -266,7 +327,7 @@ export default function AddFamilyMemberPage() {
       setIsCameraActive(true)
 
       // Pequeña pausa para asegurar que el elemento de video se ha renderizado
-      await new Promise((resolve) => setTimeout(resolve, 300))
+      await new Promise((resolve) => setTimeout(resolve, 100))
 
       if (!videoRef.current) {
         console.error("El elemento de video no está disponible después de activar la cámara")
@@ -283,42 +344,32 @@ export default function AddFamilyMemberPage() {
       console.log("Acceso a la cámara concedido:", stream)
 
       // Asignar el stream al elemento de video
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        streamRef.current = stream
+      videoRef.current.srcObject = stream
+      streamRef.current = stream
 
-        // Asegurarse de que el video se reproduce correctamente
-        videoRef.current.onloadedmetadata = () => {
-          if (videoRef.current) {
-            videoRef.current
-              .play()
-              .then(() => {
-                console.log("Video reproduciendo correctamente")
-                speak(
-                  "Cámara activada. Por favor, ubica a la persona frente a la cámara. Cuando estés listo, di 'capturar' para tomar la foto o 'cancelar' para desactivar la cámara.",
-                )
-              })
-              .catch((err) => {
-                console.error("Error al reproducir el video:", err)
-                setCameraError("Error al iniciar la cámara. Por favor, intenta de nuevo.")
-                stopCamera()
-              })
-          }
+      // Asegurarse de que el video se reproduce correctamente
+      videoRef.current.onloadedmetadata = () => {
+        if (videoRef.current) {
+          videoRef.current
+            .play()
+            .then(() => {
+              speak(
+                "Cámara activada. Por favor, ubícate frente a la cámara, asegurando que tu rostro esté bien iluminado y centrado. Cuando estés listo, di 'capturar' para tomar la foto o 'cancelar' para desactivar la cámara.",
+              )
+            })
+            .catch((err) => {
+              console.error("Error al reproducir el video:", err)
+              setCameraError("Error al iniciar la cámara. Por favor, intenta de nuevo.")
+              stopCamera()
+            })
         }
+      }
 
-        // Manejar errores en la carga del video
-        videoRef.current.onerror = (e) => {
-          console.error("Error en el elemento de video:", e)
-          setCameraError("Error al cargar el video. Por favor, intenta de nuevo.")
-          stopCamera()
-        }
-      } else {
-        console.error("El elemento de video sigue sin estar disponible")
-        setCameraError("Error al inicializar la cámara. Por favor, intenta de nuevo.")
-        setIsCameraActive(false)
-        if (stream) {
-          stream.getTracks().forEach((track) => track.stop())
-        }
+      // Manejar errores en la carga del video
+      videoRef.current.onerror = () => {
+        console.error("Error en el elemento de video")
+        setCameraError("Error al cargar el video. Por favor, intenta de nuevo.")
+        stopCamera()
       }
     } catch (err) {
       console.error("Error al acceder a la cámara:", err)
@@ -331,22 +382,12 @@ export default function AddFamilyMemberPage() {
 
   const stopCamera = () => {
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => {
-        try {
-          track.stop()
-        } catch (e) {
-          console.error("Error al detener track:", e)
-        }
-      })
+      streamRef.current.getTracks().forEach((track) => track.stop())
       streamRef.current = null
     }
 
     if (videoRef.current) {
-      try {
-        videoRef.current.srcObject = null
-      } catch (e) {
-        console.error("Error al limpiar srcObject:", e)
-      }
+      videoRef.current.srcObject = null
     }
 
     setIsCameraActive(false)
@@ -376,23 +417,10 @@ export default function AddFamilyMemberPage() {
   }
 
   const capturePhoto = () => {
-    console.log("Iniciando captura de foto...")
-    console.log("Estado de videoRef:", videoRef.current ? "disponible" : "no disponible")
-    console.log("Estado de canvasRef:", canvasRef.current ? "disponible" : "no disponible")
-
-    // Verificar que los refs estén disponibles antes de continuar
-    if (!videoRef.current) {
-      console.error("Elemento de video no disponible")
-      setCameraError("Error: El elemento de video no está disponible. Por favor, intenta de nuevo.")
+    if (!videoRef.current || !canvasRef.current) {
+      console.error("Video o canvas no disponibles")
+      setCameraError("Error al capturar la foto. Por favor, intenta de nuevo.")
       speak("Error al capturar la foto. Por favor, intenta de nuevo.")
-      return
-    }
-
-    // Asegurarse de que el canvas esté disponible
-    if (!canvasRef.current) {
-      console.error("Elemento canvas no disponible")
-      setCameraError("Error: El elemento canvas no está disponible. Por favor, intenta de nuevo.")
-      speak("Error al procesar la imagen. Por favor, intenta de nuevo.")
       return
     }
 
@@ -405,48 +433,21 @@ export default function AddFamilyMemberPage() {
         return
       }
 
-      // Verificar que el video tenga dimensiones válidas
-      const videoWidth = videoRef.current.videoWidth || 640
-      const videoHeight = videoRef.current.videoHeight || 480
-
-      console.log("Dimensiones del video:", videoWidth, "x", videoHeight)
-
-      // Establecer dimensiones del canvas al tamaño del video o usar valores predeterminados
-      canvasRef.current.width = videoWidth
-      canvasRef.current.height = videoHeight
-
-      // Asegurarse de que el video esté reproduciendo antes de capturar
-      if (videoRef.current.paused || videoRef.current.ended) {
-        console.warn("El video está pausado o terminado, intentando reproducir...")
-        try {
-          // Intentar reproducir el video si está pausado
-          videoRef.current.play().catch((e) => {
-            console.error("No se pudo reproducir el video:", e)
-          })
-        } catch (e) {
-          console.error("Error al intentar reproducir el video:", e)
-        }
-      }
+      // Establecer dimensiones del canvas al tamaño del video
+      canvasRef.current.width = videoRef.current.videoWidth
+      canvasRef.current.height = videoRef.current.videoHeight
 
       // Dibujar el frame actual del video en el canvas
-      context.drawImage(videoRef.current, 0, 0, videoWidth, videoHeight)
+      context.drawImage(videoRef.current, 0, 0, videoRef.current.videoWidth, videoRef.current.videoHeight)
 
       // Convertir el canvas a una URL de datos
       const photoData = canvasRef.current.toDataURL("image/png")
-      if (!photoData || photoData === "data:,") {
-        console.error("No se pudo generar la imagen")
-        setCameraError("Error: No se pudo generar la imagen. Por favor, intenta de nuevo.")
-        speak("Error al capturar la foto. Por favor, intenta de nuevo.")
-        return
-      }
-
       setPhotoPreview(photoData)
-      console.log("Foto capturada correctamente")
 
       // Detener la cámara
       stopCamera()
 
-      speak("Foto capturada correctamente. Para guardar el familiar, di 'guardar'.")
+      speak("Foto capturada correctamente. Para guardar los cambios, di 'guardar'.")
       setCountdownActive(false)
     } catch (err) {
       console.error("Error al capturar la foto:", err)
@@ -459,11 +460,15 @@ export default function AddFamilyMemberPage() {
     <main className="flex min-h-screen flex-col bg-white">
       {/* Header con gradiente */}
       <header className="bg-gradient-to-r from-[#6a3de8] to-[#06b6d4] p-4 flex items-center">
-        <button onClick={handleBack} className="text-white flex items-center" aria-label="Volver a cercanía parental">
+        <button
+          onClick={handleBack}
+          className="text-white flex items-center"
+          aria-label="Volver al panel principal. Di 'volver' para regresar."
+        >
           <ChevronLeft className="h-6 w-6" />
           <span className="ml-2">Volver</span>
         </button>
-        <h1 className="text-white text-lg font-medium flex-1 text-center mr-8">Agregar Familiar</h1>
+        <h1 className="text-white text-lg font-medium flex-1 text-center mr-8">Editar Perfil</h1>
 
         {/* Indicador de reconocimiento de voz */}
         <div className="flex items-center gap-2">
@@ -479,13 +484,7 @@ export default function AddFamilyMemberPage() {
 
       {/* Contenido principal */}
       <div className="flex-1 p-4 max-w-md mx-auto w-full">
-        <form
-          className="space-y-6"
-          onSubmit={(e) => {
-            e.preventDefault()
-            handleSubmit()
-          }}
-        >
+        <form className="space-y-6" onSubmit={(e) => e.preventDefault()}>
           {/* Mensaje de error */}
           {error && (
             <div className="bg-red-500/20 border border-red-500/50 text-red-700 p-3 rounded-md text-sm">{error}</div>
@@ -504,13 +503,13 @@ export default function AddFamilyMemberPage() {
               className="w-32 h-32 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden relative cursor-pointer"
               onClick={isCameraActive ? undefined : handlePhotoClick}
               role="button"
-              aria-label="Área para foto del familiar. Haz clic para subir una foto o di 'tomar foto' para usar la cámara."
+              aria-label="Área para foto de perfil. Haz clic para subir una foto o di 'tomar foto' para usar la cámara."
             >
               {photoPreview ? (
                 <>
                   <Image
                     src={photoPreview || "/placeholder.svg"}
-                    alt="Vista previa de la foto"
+                    alt="Vista previa de tu foto"
                     fill
                     className="object-cover"
                   />
@@ -546,7 +545,7 @@ export default function AddFamilyMemberPage() {
                 </>
               )}
             </div>
-            <canvas ref={canvasRef} className="hidden" width="640" height="480" />
+            <canvas ref={canvasRef} className="hidden" />
             <input
               type="file"
               ref={fileInputRef}
@@ -612,7 +611,7 @@ export default function AddFamilyMemberPage() {
           {/* Nombre */}
           <div className="space-y-2">
             <Label htmlFor="name" className="text-gray-700">
-              Nombre <span className="text-red-500">*</span>
+              Nombre completo <span className="text-red-500">*</span>
             </Label>
             <Input
               id="name"
@@ -620,57 +619,41 @@ export default function AddFamilyMemberPage() {
               onChange={(e) => setName(e.target.value)}
               onFocus={() => setCurrentFocus("name")}
               onBlur={() => setCurrentFocus(null)}
-              placeholder="Nombre del familiar o mascota"
+              placeholder="Ingresa tu nombre"
               className="border-gray-300"
               required
-              aria-label="Campo de nombre. Di 'nombre' para activar este campo y luego dicta el nombre."
+              aria-label="Campo de nombre completo. Di 'nombre' para activar este campo y luego dicta tu nombre."
             />
           </div>
 
-          {/* Relación */}
+          {/* Email */}
           <div className="space-y-2">
-            <Label htmlFor="relation" className="text-gray-700">
-              Relación <span className="text-red-500">*</span>
+            <Label htmlFor="email" className="text-gray-700">
+              Correo electrónico <span className="text-red-500">*</span>
             </Label>
             <Input
-              id="relation"
-              value={relation}
-              onChange={(e) => setRelation(e.target.value)}
-              onFocus={() => setCurrentFocus("relation")}
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onFocus={() => setCurrentFocus("email")}
               onBlur={() => setCurrentFocus(null)}
-              placeholder="Padre, madre, hijo, mascota, etc."
+              placeholder="correo@ejemplo.com"
               className="border-gray-300"
               required
-              aria-label="Campo de relación. Di 'relación' para activar este campo y luego dicta la relación."
-            />
-          </div>
-
-          {/* Teléfono (opcional) */}
-          <div className="space-y-2">
-            <Label htmlFor="phone" className="text-gray-700">
-              Teléfono <span className="text-gray-400">(opcional)</span>
-            </Label>
-            <Input
-              id="phone"
-              type="tel"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              onFocus={() => setCurrentFocus("phone")}
-              onBlur={() => setCurrentFocus(null)}
-              placeholder="Número de teléfono"
-              className="border-gray-300"
-              aria-label="Campo de teléfono. Di 'teléfono' para activar este campo y luego dicta el número."
+              aria-label="Campo de correo electrónico. Di 'correo' para activar este campo y luego dicta tu correo."
             />
           </div>
 
           {/* Botones */}
           <div className="flex flex-col space-y-3 pt-4">
             <Button
-              type="submit"
+              type="button"
+              onClick={handleSubmit}
               className="bg-gradient-to-r from-[#6a3de8] to-[#06b6d4] text-white py-3 rounded-full"
-              aria-label="Guardar familiar. Di 'guardar' o 'agregar' para guardar el familiar."
+              aria-label="Guardar cambios. Di 'guardar' o 'actualizar' para guardar los cambios."
             >
-              Guardar familiar
+              Guardar cambios
             </Button>
             <Button
               type="button"

@@ -3,7 +3,8 @@
 import { useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
-import { Settings, Users, LogOut, ChevronRight } from "lucide-react"
+// Importar el nuevo icono
+import { Settings, Users, LogOut, ChevronRight, Mic, MicOff } from "lucide-react"
 import { useSpeechSynthesis } from "@/hooks/use-speech-synthesis"
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition"
 import { UserDatabase, type User } from "@/lib/db"
@@ -11,11 +12,12 @@ import { UserDatabase, type User } from "@/lib/db"
 export default function Dashboard() {
   const router = useRouter()
   const { speak } = useSpeechSynthesis()
-  const { startListening, stopListening, transcript, resetTranscript, listening } = useSpeechRecognition()
+  const { startListening, stopListening, transcript, resetTranscript, listening, error } = useSpeechRecognition()
   const [isLoaded, setIsLoaded] = useState(false)
   const checkIntervalRef = useRef<NodeJS.Timeout | null>(null)
   const [userName, setUserName] = useState("Usuario")
   const [currentUser, setCurrentUser] = useState<User | null>(null)
+  const [microphoneActive, setMicrophoneActive] = useState(true)
 
   // Verificar si hay un usuario actual
   useEffect(() => {
@@ -49,6 +51,10 @@ export default function Dashboard() {
     } else if (command.includes("sincronizar")) {
       speak("Sincronizando dispositivo")
       // Aquí iría la lógica para sincronizar
+    } else if (command.includes("micrófono apagado") || command.includes("desactivar micrófono")) {
+      handleToggleMicrophone(false)
+    } else if (command.includes("micrófono encendido") || command.includes("activar micrófono")) {
+      handleToggleMicrophone(true)
     }
 
     resetTranscript()
@@ -63,15 +69,9 @@ export default function Dashboard() {
         `Bienvenido al panel de control, ${userName}. Tus gafas Mirai están conectadas y con 98% de batería.`,
         () => {
           // Iniciar reconocimiento de voz solo después de que termine de hablar
-          startListening()
-
-          // Set up a less frequent check to ensure speech recognition is working
-          checkIntervalRef.current = setInterval(() => {
-            if (!listening) {
-              console.log("Speech recognition not active, attempting to restart...")
-              startListening()
-            }
-          }, 10000) // Check every 10 seconds instead of 5
+          if (microphoneActive) {
+            startListening()
+          }
         },
       )
     }, 1000)
@@ -81,7 +81,24 @@ export default function Dashboard() {
       if (checkIntervalRef.current) clearInterval(checkIntervalRef.current)
       stopListening()
     }
-  }, [speak, startListening, stopListening, userName])
+  }, [speak, startListening, stopListening, userName, microphoneActive])
+
+  // Monitor speech recognition errors
+  useEffect(() => {
+    if (error) {
+      console.log("Speech recognition error detected:", error)
+
+      // If we're supposed to be listening but got an error, try to restart
+      if (microphoneActive && !listening) {
+        console.log("Attempting to restart speech recognition after error")
+        const restartTimer = setTimeout(() => {
+          startListening()
+        }, 2000)
+
+        return () => clearTimeout(restartTimer)
+      }
+    }
+  }, [error, listening, startListening, microphoneActive])
 
   // Manejar cierre de sesión
   const handleLogout = () => {
@@ -92,6 +109,18 @@ export default function Dashboard() {
     }, 1500)
   }
 
+  // Toggle microphone on/off
+  const handleToggleMicrophone = (active: boolean) => {
+    setMicrophoneActive(active)
+    if (active) {
+      speak("Micrófono activado")
+      startListening()
+    } else {
+      speak("Micrófono desactivado")
+      stopListening()
+    }
+  }
+
   return (
     <main className="flex min-h-screen flex-col bg-white">
       {/* Header con gradiente */}
@@ -100,7 +129,15 @@ export default function Dashboard() {
         <Image src="/images/mirai-logo.png" alt="MirAI Logo" width={40} height={40} className="object-contain" />
         <div className="flex items-center">
           <span className="text-white mr-2">{userName}</span>
-          <div className="w-8 h-8 rounded-full bg-gray-300 overflow-hidden border-2 border-white">
+          <div
+            className="w-8 h-8 rounded-full bg-gray-300 overflow-hidden border-2 border-white cursor-pointer"
+            onClick={() => {
+              speak("Abriendo edición de perfil")
+              router.push("/profile/edit")
+            }}
+            role="button"
+            aria-label="Editar perfil"
+          >
             {currentUser?.photoUrl ? (
               <Image
                 src={currentUser.photoUrl || "/placeholder.svg"}
@@ -115,6 +152,21 @@ export default function Dashboard() {
           </div>
         </div>
       </header>
+
+      {/* Microphone status indicator */}
+      <div className="fixed top-16 right-4 z-10">
+        <button
+          onClick={() => handleToggleMicrophone(!microphoneActive)}
+          className={`p-2 rounded-full ${microphoneActive ? "bg-green-100" : "bg-gray-100"}`}
+          aria-label={microphoneActive ? "Desactivar micrófono" : "Activar micrófono"}
+        >
+          {microphoneActive ? (
+            <Mic className={`h-5 w-5 ${listening ? "text-green-500 animate-pulse" : "text-gray-500"}`} />
+          ) : (
+            <MicOff className="h-5 w-5 text-gray-500" />
+          )}
+        </button>
+      </div>
 
       {/* Contenido principal */}
       <div className="flex-1 p-4 max-w-md mx-auto w-full">

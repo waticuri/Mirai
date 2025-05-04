@@ -9,70 +9,245 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useSpeechSynthesis } from "@/hooks/use-speech-synthesis"
-import { Camera, Upload, X, Check } from "lucide-react"
+import { useSpeechRecognition } from "@/hooks/use-speech-recognition"
+import { Camera, Upload, X, Check, HelpCircle, Mic, MicOff } from "lucide-react"
 import { UserDatabase } from "@/lib/db"
 
 export default function RegisterPage() {
   const router = useRouter()
   const { speak } = useSpeechSynthesis()
+  const { startListening, stopListening, transcript, resetTranscript, listening } = useSpeechRecognition()
   const [isLoaded, setIsLoaded] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [helpMode, setHelpMode] = useState(false)
+  const [registrationSuccess, setRegistrationSuccess] = useState(false)
 
   // Campos del formulario
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
+  const [currentFocus, setCurrentFocus] = useState<string | null>(null)
 
   // Estado para la captura de cámara
   const [isCameraActive, setIsCameraActive] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  const [cameraError, setCameraError] = useState<string | null>(null)
+  const [countdownActive, setCountdownActive] = useState(false)
+  const [countdown, setCountdown] = useState(3)
 
   useEffect(() => {
     setIsLoaded(true)
     // Reproducir mensaje de bienvenida después de un breve retraso
     const timer = setTimeout(() => {
       speak(
-        "Pantalla de registro. Por favor, completa tus datos y agrega una foto para el reconocimiento facial. Puedes subir una foto o capturarla con la cámara.",
+        "Pantalla de registro. Para registrarte, necesitarás proporcionar tu nombre, correo electrónico y una foto para el reconocimiento facial. Puedes navegar por voz diciendo 'nombre', 'correo', 'foto', 'ayuda', 'registrar' o 'volver'. Para activar la ayuda detallada, di 'modo ayuda'.",
+        () => {
+          startListening()
+        },
       )
     }, 1000)
 
     return () => {
       clearTimeout(timer)
       stopCamera()
+      stopListening()
     }
-  }, [speak])
+  }, [speak, startListening, stopListening])
+
+  // Manejar comandos de voz
+  useEffect(() => {
+    if (!transcript) return
+
+    const command = transcript.toLowerCase()
+    console.log("Comando recibido:", command)
+
+    // Comandos de navegación
+    if (command.includes("volver") || command.includes("atrás") || command.includes("cancelar")) {
+      handleBack()
+    } else if (
+      command.includes("registrar") ||
+      command.includes("completar") ||
+      command.includes("guardar") ||
+      command.includes("finalizar")
+    ) {
+      handleRegister({ preventDefault: () => {} } as React.FormEvent)
+    } else if (command.includes("modo ayuda")) {
+      toggleHelpMode()
+    } else if (command.includes("ayuda")) {
+      provideHelp()
+    }
+
+    // Comandos para campos de formulario
+    else if (command.includes("nombre")) {
+      focusField("name")
+    } else if (command.includes("correo") || command.includes("email")) {
+      focusField("email")
+    }
+
+    // Comandos para dictado de texto
+    else if (currentFocus === "name" && !command.includes("nombre")) {
+      setName(command.trim())
+      speak(`Nombre establecido como: ${command.trim()}. Di 'correo' para continuar con el siguiente campo.`)
+    } else if (currentFocus === "email" && !command.includes("correo") && !command.includes("email")) {
+      // Intentar formatear el correo electrónico dictado
+      const formattedEmail = formatDictatedEmail(command.trim())
+      setEmail(formattedEmail)
+      speak(
+        `Correo electrónico establecido como: ${formatEmailForSpeech(formattedEmail)}. Di 'foto' para continuar con la foto.`,
+      )
+    }
+
+    // Comandos para foto
+    else if (command.includes("foto") || command.includes("imagen") || command.includes("fotografía")) {
+      if (command.includes("tomar") || command.includes("capturar") || command.includes("cámara")) {
+        handleCameraStart()
+      } else if (command.includes("quitar") || command.includes("eliminar") || command.includes("borrar")) {
+        handleRemovePhoto()
+      } else {
+        speak("Para tomar una foto di 'tomar foto' o 'usar cámara'. Para quitar la foto actual di 'quitar foto'.")
+      }
+    } else if (
+      command.includes("tomar foto") ||
+      command.includes("usar cámara") ||
+      command.includes("activar cámara")
+    ) {
+      handleCameraStart()
+    } else if (command.includes("capturar") && isCameraActive) {
+      startCountdown()
+    } else if (command.includes("cancelar") && isCameraActive) {
+      stopCamera()
+      speak("Cámara desactivada.")
+    }
+
+    resetTranscript()
+  }, [transcript, speak, resetTranscript, currentFocus, isCameraActive])
+
+  // Función para formatear email dictado
+  const formatDictatedEmail = (text: string): string => {
+    // Reemplazar palabras comunes con símbolos de email
+    let email = text
+      .toLowerCase()
+      .replace(/arroba/g, "@")
+      .replace(/punto/g, ".")
+      .replace(/guion/g, "-")
+      .replace(/guion bajo/g, "_")
+      .replace(/espacio/g, "")
+      .replace(/ /g, "") // Eliminar espacios
+
+    // Si no tiene @, intentar encontrar "at" o similares
+    if (!email.includes("@")) {
+      email = email.replace(/at/g, "@")
+    }
+
+    // Si no tiene punto, intentar encontrar "dot" o similares
+    if (!email.includes(".")) {
+      const dotIndex = email.lastIndexOf("dot")
+      if (dotIndex !== -1) {
+        email = email.substring(0, dotIndex) + "." + email.substring(dotIndex + 3)
+      }
+    }
+
+    return email
+  }
+
+  // Función para leer el email de forma más clara
+  const formatEmailForSpeech = (email: string): string => {
+    return email
+      .replace("@", " arroba ")
+      .replace(/\./g, " punto ")
+      .replace(/-/g, " guion ")
+      .replace(/_/g, " guion bajo ")
+  }
+
+  const focusField = (field: string) => {
+    setCurrentFocus(field)
+    const fieldElement = document.getElementById(field)
+    if (fieldElement) {
+      fieldElement.focus()
+
+      if (field === "name") {
+        speak("Campo de nombre activado. Por favor, di tu nombre completo.")
+      } else if (field === "email") {
+        speak(
+          "Campo de correo electrónico activado. Por favor, di tu correo electrónico, pronunciando 'arroba' y 'punto' donde corresponda.",
+        )
+      }
+    }
+  }
+
+  const toggleHelpMode = () => {
+    setHelpMode(!helpMode)
+    if (!helpMode) {
+      speak("Modo de ayuda activado. Ahora recibirás instrucciones detalladas para cada acción.")
+    } else {
+      speak("Modo de ayuda desactivado.")
+    }
+  }
+
+  const provideHelp = () => {
+    speak(
+      "Comandos disponibles: Di 'nombre' para ingresar tu nombre. Di 'correo' para ingresar tu correo electrónico. " +
+        "Di 'foto' o 'tomar foto' para activar la cámara. Di 'capturar' para tomar la foto cuando la cámara esté activa. " +
+        "Di 'registrar' o 'completar registro' para finalizar. Di 'volver' para regresar a la pantalla anterior. " +
+        "Di 'modo ayuda' para activar o desactivar instrucciones detalladas.",
+    )
+  }
 
   const handleRegister = (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
 
+    // Validaciones
+    if (!name) {
+      speak("Por favor, proporciona tu nombre. Di 'nombre' para activar el campo.")
+      setError("Se requiere un nombre")
+      return
+    }
+
+    if (!email) {
+      speak("Por favor, proporciona tu correo electrónico. Di 'correo' para activar el campo.")
+      setError("Se requiere un correo electrónico")
+      return
+    }
+
     if (!photoPreview) {
-      speak("Por favor, agrega una foto para el reconocimiento facial antes de continuar.")
+      speak("Por favor, agrega una foto para el reconocimiento facial. Di 'tomar foto' para activar la cámara.")
       setError("Se requiere una foto para el reconocimiento facial")
       return
     }
 
     try {
+      console.log("Intentando crear usuario con:", { name, email, photoUrl: photoPreview ? "data:image/..." : "null" })
+
       // Crear el usuario en la base de datos
       const newUser = UserDatabase.createUser({
         name,
         email,
-        photoUrl: photoPreview,
+        photoUrl: photoPreview || "",
       })
+
+      console.log("Usuario creado exitosamente:", newUser)
 
       // Establecer como usuario actual
       UserDatabase.setCurrentUser(newUser.id)
 
+      // Verificar que el usuario se haya guardado correctamente
+      const users = UserDatabase.getUsers()
+      console.log("Usuarios después de registro:", users)
+
+      setRegistrationSuccess(true)
       speak(
-        "Registro completado. Tu foto ha sido guardada para el reconocimiento facial. Redirigiendo al panel principal.",
+        "Registro completado correctamente. Tu foto ha sido guardada para el reconocimiento facial. Redirigiendo a la pantalla de inicio de sesión.",
       )
+
       setTimeout(() => {
-        router.push("/dashboard")
+        router.push("/")
       }, 2000)
     } catch (err: any) {
+      console.error("Error al registrar usuario:", err)
       speak(`Error al registrar: ${err.message}`)
       setError(err.message)
     }
@@ -81,6 +256,7 @@ export default function RegisterPage() {
   const handleBack = () => {
     speak("Volviendo a la pantalla de inicio de sesión.")
     stopCamera()
+    stopListening()
     router.push("/")
   }
 
@@ -106,64 +282,241 @@ export default function RegisterPage() {
     speak("Foto eliminada. Por favor, agrega una nueva foto para el reconocimiento facial.")
   }
 
+  const handleCameraStart = () => {
+    speak("Activando cámara para tomar tu foto.")
+    startCamera()
+  }
+
   // Funciones para manejo de cámara
   const startCamera = async () => {
     try {
-      stopCamera() // Asegurarse de que no haya una cámara activa
+      // Limpiar errores anteriores
+      setCameraError(null)
+
+      // Detener cualquier stream de cámara activo
+      stopCamera()
       setPhotoPreview(null)
 
+      console.log("Intentando acceder a la cámara...")
+
+      // Verificar si el navegador soporta getUserMedia
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        const errorMsg = "Tu navegador no soporta acceso a la cámara"
+        console.error(errorMsg)
+        setCameraError(errorMsg)
+        speak(errorMsg)
+        return
+      }
+
+      // Primero activamos la cámara en la UI para asegurar que el elemento de video se renderice
+      setIsCameraActive(true)
+
+      // Pequeña pausa para asegurar que el elemento de video se ha renderizado
+      await new Promise((resolve) => setTimeout(resolve, 300))
+
+      if (!videoRef.current) {
+        console.error("El elemento de video no está disponible después de activar la cámara")
+        setCameraError("Error al inicializar la cámara. Por favor, intenta de nuevo.")
+        setIsCameraActive(false)
+        return
+      }
+
+      // Solicitar acceso a la cámara
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: "user" },
       })
 
+      console.log("Acceso a la cámara concedido:", stream)
+
+      // Asignar el stream al elemento de video
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         streamRef.current = stream
-        setIsCameraActive(true)
-        speak(
-          "Cámara activada. Por favor, ubícate frente a la cámara, asegurando que tu rostro esté bien iluminado y centrado. Cuando estés listo, pulsa el botón para capturar tu foto.",
-        )
+
+        // Asegurarse de que el video se reproduce correctamente
+        videoRef.current.onloadedmetadata = () => {
+          if (videoRef.current) {
+            videoRef.current
+              .play()
+              .then(() => {
+                console.log("Video reproduciendo correctamente")
+                speak(
+                  "Cámara activada. Por favor, ubícate frente a la cámara, asegurando que tu rostro esté bien iluminado y centrado. Cuando estés listo, di 'capturar' para tomar la foto o 'cancelar' para desactivar la cámara.",
+                )
+              })
+              .catch((err) => {
+                console.error("Error al reproducir el video:", err)
+                setCameraError("Error al iniciar la cámara. Por favor, intenta de nuevo.")
+                stopCamera()
+              })
+          }
+        }
+
+        // Manejar errores en la carga del video
+        videoRef.current.onerror = (e) => {
+          console.error("Error en el elemento de video:", e)
+          setCameraError("Error al cargar el video. Por favor, intenta de nuevo.")
+          stopCamera()
+        }
+      } else {
+        console.error("El elemento de video sigue sin estar disponible")
+        setCameraError("Error al inicializar la cámara. Por favor, intenta de nuevo.")
+        setIsCameraActive(false)
+        if (stream) {
+          stream.getTracks().forEach((track) => track.stop())
+        }
       }
     } catch (err) {
       console.error("Error al acceder a la cámara:", err)
-      speak("No se pudo acceder a la cámara. Por favor, intenta subir una foto.")
+      const errorMsg = "No se pudo acceder a la cámara. Por favor, verifica que has dado permiso para usar la cámara."
+      setCameraError(errorMsg)
+      speak(errorMsg)
+      setIsCameraActive(false)
     }
   }
 
   const stopCamera = () => {
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach((track) => track.stop())
+      streamRef.current.getTracks().forEach((track) => {
+        try {
+          track.stop()
+        } catch (e) {
+          console.error("Error al detener track:", e)
+        }
+      })
       streamRef.current = null
     }
 
     if (videoRef.current) {
-      videoRef.current.srcObject = null
+      try {
+        videoRef.current.srcObject = null
+      } catch (e) {
+        console.error("Error al limpiar srcObject:", e)
+      }
     }
 
     setIsCameraActive(false)
+    setCountdownActive(false)
+    setCountdown(3)
+  }
+
+  // Función para iniciar la cuenta regresiva antes de capturar la foto
+  const startCountdown = () => {
+    setCountdownActive(true)
+    setCountdown(3)
+    speak("Preparando para capturar. 3...")
+
+    const countdownInterval = setInterval(() => {
+      setCountdown((prev) => {
+        const newCount = prev - 1
+        if (newCount > 0) {
+          speak(newCount.toString())
+        } else if (newCount === 0) {
+          speak("¡Capturando!")
+          capturePhoto()
+          clearInterval(countdownInterval)
+        }
+        return newCount
+      })
+    }, 1000)
   }
 
   const capturePhoto = () => {
-    if (!videoRef.current || !canvasRef.current) return
+    console.log("Iniciando captura de foto...")
+    console.log("Estado de videoRef:", videoRef.current ? "disponible" : "no disponible")
+    console.log("Estado de canvasRef:", canvasRef.current ? "disponible" : "no disponible")
 
-    const context = canvasRef.current.getContext("2d")
-    if (!context) return
+    // Verificar que los refs estén disponibles antes de continuar
+    if (!videoRef.current) {
+      console.error("Elemento de video no disponible")
+      setCameraError("Error: El elemento de video no está disponible. Por favor, intenta de nuevo.")
+      speak("Error al capturar la foto. Por favor, intenta de nuevo.")
+      return
+    }
 
-    // Establecer dimensiones del canvas al tamaño del video
-    canvasRef.current.width = videoRef.current.videoWidth
-    canvasRef.current.height = videoRef.current.videoHeight
+    // Asegurarse de que el canvas esté disponible
+    if (!canvasRef.current) {
+      console.error("Elemento canvas no disponible")
+      setCameraError("Error: El elemento canvas no está disponible. Por favor, intenta de nuevo.")
+      speak("Error al procesar la imagen. Por favor, intenta de nuevo.")
+      return
+    }
 
-    // Dibujar el frame actual del video en el canvas
-    context.drawImage(videoRef.current, 0, 0, videoRef.current.videoWidth, videoRef.current.videoHeight)
+    try {
+      const context = canvasRef.current.getContext("2d")
+      if (!context) {
+        console.error("No se pudo obtener el contexto del canvas")
+        setCameraError("Error al procesar la imagen. Por favor, intenta de nuevo.")
+        speak("Error al procesar la imagen. Por favor, intenta de nuevo.")
+        return
+      }
 
-    // Convertir el canvas a una URL de datos
-    const photoData = canvasRef.current.toDataURL("image/png")
-    setPhotoPreview(photoData)
+      // Verificar que el video tenga dimensiones válidas
+      const videoWidth = videoRef.current.videoWidth || 640
+      const videoHeight = videoRef.current.videoHeight || 480
 
-    // Detener la cámara
-    stopCamera()
+      console.log("Dimensiones del video:", videoWidth, "x", videoHeight)
 
-    speak("Foto capturada correctamente. Esta foto se utilizará para el reconocimiento facial.")
+      // Establecer dimensiones del canvas al tamaño del video o usar valores predeterminados
+      canvasRef.current.width = videoWidth
+      canvasRef.current.height = videoHeight
+
+      // Asegurarse de que el video esté reproduciendo antes de capturar
+      if (videoRef.current.paused || videoRef.current.ended) {
+        console.warn("El video está pausado o terminado, intentando reproducir...")
+        try {
+          // Intentar reproducir el video si está pausado
+          videoRef.current.play().catch((e) => {
+            console.error("No se pudo reproducir el video:", e)
+          })
+        } catch (e) {
+          console.error("Error al intentar reproducir el video:", e)
+        }
+      }
+
+      // Dibujar el frame actual del video en el canvas
+      context.drawImage(videoRef.current, 0, 0, videoWidth, videoHeight)
+
+      // Convertir el canvas a una URL de datos
+      const photoData = canvasRef.current.toDataURL("image/png")
+      if (!photoData || photoData === "data:,") {
+        console.error("No se pudo generar la imagen")
+        setCameraError("Error: No se pudo generar la imagen. Por favor, intenta de nuevo.")
+        speak("Error al capturar la foto. Por favor, intenta de nuevo.")
+        return
+      }
+
+      setPhotoPreview(photoData)
+      console.log("Foto capturada correctamente")
+
+      // Detener la cámara
+      stopCamera()
+
+      speak(
+        "Foto capturada correctamente. Esta foto se utilizará para el reconocimiento facial. Para completar el registro, di 'registrar'.",
+      )
+      setCountdownActive(false)
+    } catch (err) {
+      console.error("Error al capturar la foto:", err)
+      setCameraError("Error al capturar la foto. Por favor, intenta de nuevo.")
+      speak("Error al capturar la foto. Por favor, intenta de nuevo.")
+    }
+  }
+
+  // Si el registro fue exitoso, mostrar mensaje de confirmación
+  if (registrationSuccess) {
+    return (
+      <main className="flex min-h-screen flex-col items-center justify-center relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-b from-[#6a3de8] via-[#3b82f6] to-[#06b6d4] z-0" />
+        <div className="z-10 bg-white/20 backdrop-blur-md p-8 rounded-xl border border-white/20 text-center">
+          <Check className="h-16 w-16 text-white mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-white mb-2">¡Registro Completado!</h2>
+          <p className="text-white mb-4">
+            Tu cuenta ha sido creada correctamente. Redirigiendo a la pantalla de inicio de sesión...
+          </p>
+        </div>
+      </main>
+    )
   }
 
   return (
@@ -178,6 +531,23 @@ export default function RegisterPage() {
         }`}
       >
         <h1 className="text-3xl font-bold mb-8 text-white">Registrarse</h1>
+
+        {/* Indicador de reconocimiento de voz */}
+        <div className="absolute top-4 right-4 flex items-center gap-2">
+          {listening ? (
+            <>
+              <div className="animate-pulse">
+                <Mic className="h-6 w-6 text-white" />
+              </div>
+              <span className="text-white text-sm">Escuchando...</span>
+            </>
+          ) : (
+            <>
+              <MicOff className="h-6 w-6 text-white/50" />
+              <span className="text-white/50 text-sm">Micrófono inactivo</span>
+            </>
+          )}
+        </div>
 
         <form
           onSubmit={handleRegister}
@@ -194,10 +564,17 @@ export default function RegisterPage() {
             <div
               className="w-32 h-32 rounded-full bg-white/20 flex items-center justify-center overflow-hidden relative cursor-pointer"
               onClick={isCameraActive ? undefined : handlePhotoClick}
+              role="button"
+              aria-label="Área para foto de perfil. Haz clic para subir una foto o di 'tomar foto' para usar la cámara."
             >
               {photoPreview ? (
                 <>
-                  <Image src={photoPreview || "/placeholder.svg"} alt="Vista previa" fill className="object-cover" />
+                  <Image
+                    src={photoPreview || "/placeholder.svg"}
+                    alt="Vista previa de tu foto"
+                    fill
+                    className="object-cover"
+                  />
                   <button
                     type="button"
                     onClick={(e) => {
@@ -210,15 +587,29 @@ export default function RegisterPage() {
                     <X className="h-4 w-4 text-gray-600" />
                   </button>
                 </>
-              ) : isCameraActive ? (
-                <video ref={videoRef} autoPlay playsInline className="absolute inset-0 w-full h-full object-cover" />
               ) : (
-                <Camera className="h-10 w-10 text-white" />
+                <>
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    className={`absolute inset-0 w-full h-full object-cover ${isCameraActive ? "block" : "hidden"}`}
+                    aria-label="Vista previa de la cámara"
+                  />
+                  {!isCameraActive && <Camera className="h-10 w-10 text-white" />}
+
+                  {/* Cuenta regresiva para captura */}
+                  {countdownActive && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/30 text-white text-4xl font-bold">
+                      {countdown}
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
-            {/* Canvas oculto para capturar la foto */}
-            <canvas ref={canvasRef} className="hidden" />
+            {/* Canvas oculto para capturar la foto - Asegurarse de que siempre esté renderizado */}
+            <canvas ref={canvasRef} className="hidden" width="640" height="480" />
 
             {/* Input para subir foto */}
             <input
@@ -230,14 +621,18 @@ export default function RegisterPage() {
               aria-label="Subir foto"
             />
 
+            {/* Mensaje de error de cámara */}
+            {cameraError && <div className="mt-2 text-red-300 text-xs text-center">{cameraError}</div>}
+
             {/* Botones para manejo de foto */}
             <div className="flex gap-3 mt-3">
               {isCameraActive ? (
                 <>
                   <button
                     type="button"
-                    onClick={capturePhoto}
+                    onClick={startCountdown}
                     className="text-white text-sm flex items-center hover:underline"
+                    aria-label="Capturar foto"
                   >
                     <Check className="h-4 w-4 mr-1" />
                     Capturar
@@ -249,6 +644,7 @@ export default function RegisterPage() {
                       speak("Cámara desactivada.")
                     }}
                     className="text-white text-sm flex items-center hover:underline"
+                    aria-label="Cancelar captura"
                   >
                     <X className="h-4 w-4 mr-1" />
                     Cancelar
@@ -260,14 +656,16 @@ export default function RegisterPage() {
                     type="button"
                     onClick={handlePhotoClick}
                     className="text-white text-sm flex items-center hover:underline"
+                    aria-label="Subir foto desde dispositivo"
                   >
                     <Upload className="h-4 w-4 mr-1" />
                     {photoPreview ? "Cambiar foto" : "Subir foto"}
                   </button>
                   <button
                     type="button"
-                    onClick={startCamera}
+                    onClick={handleCameraStart}
                     className="text-white text-sm flex items-center hover:underline"
+                    aria-label="Usar cámara para tomar foto"
                   >
                     <Camera className="h-4 w-4 mr-1" />
                     Usar cámara
@@ -285,9 +683,12 @@ export default function RegisterPage() {
               id="name"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              onFocus={() => setCurrentFocus("name")}
+              onBlur={() => setCurrentFocus(null)}
               placeholder="Ingresa tu nombre"
               className="bg-white/20 border-white/30 text-white placeholder:text-white/50"
               required
+              aria-label="Campo de nombre completo. Di 'nombre' para activar este campo y luego dicta tu nombre."
             />
           </div>
 
@@ -300,19 +701,39 @@ export default function RegisterPage() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              onFocus={() => setCurrentFocus("email")}
+              onBlur={() => setCurrentFocus(null)}
               placeholder="correo@ejemplo.com"
               className="bg-white/20 border-white/30 text-white placeholder:text-white/50"
               required
+              aria-label="Campo de correo electrónico. Di 'correo' para activar este campo y luego dicta tu correo."
             />
           </div>
 
-          <Button type="submit" className="w-full bg-white text-gray-700 hover:bg-gray-100">
+          <Button
+            type="submit"
+            className="w-full bg-white text-gray-700 hover:bg-gray-100"
+            aria-label="Botón para completar registro. Di 'registrar' o 'completar registro' para finalizar."
+          >
             Completar registro
           </Button>
         </form>
 
-        <button onClick={handleBack} className="text-white hover:underline text-sm mt-6">
+        <button
+          onClick={handleBack}
+          className="text-white hover:underline text-sm mt-6"
+          aria-label="Volver a inicio de sesión. Di 'volver' para regresar."
+        >
           Volver a inicio de sesión
+        </button>
+
+        {/* Botón de ayuda */}
+        <button
+          onClick={provideHelp}
+          className="absolute bottom-4 right-4 bg-white/20 p-2 rounded-full"
+          aria-label="Ayuda con comandos de voz. Di 'ayuda' para escuchar los comandos disponibles."
+        >
+          <HelpCircle className="h-6 w-6 text-white" />
         </button>
       </div>
     </main>
