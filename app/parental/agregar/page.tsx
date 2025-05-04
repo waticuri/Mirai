@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import { UserDatabase } from "@/lib/db"
 
 export default function AddFamilyMemberPage() {
@@ -30,6 +31,7 @@ export default function AddFamilyMemberPage() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [currentFocus, setCurrentFocus] = useState<string | null>(null)
+  const [isEmergencyContact, setIsEmergencyContact] = useState(false)
 
   // Estado para la captura de cámara
   const [isCameraActive, setIsCameraActive] = useState(false)
@@ -82,6 +84,20 @@ export default function AddFamilyMemberPage() {
       handleBack()
     } else if (command.includes("guardar") || command.includes("agregar") || command.includes("añadir")) {
       handleSubmit()
+    } else if (command.includes("ayuda") || command.includes("asistencia") || command.includes("comandos")) {
+      provideHelp()
+    } else if (command.includes("limpiar") || command.includes("reiniciar") || command.includes("borrar todo")) {
+      // Limpiar el formulario
+      setName("")
+      setRelation("")
+      setPhone("")
+      setPhotoPreview(null)
+      setIsEmergencyContact(false)
+      speak("Formulario reiniciado. Puedes comenzar de nuevo.")
+    } else if (command.includes("repetir") || command.includes("instrucciones")) {
+      speak(
+        "Estás en la pantalla para agregar un familiar. Necesitas proporcionar el nombre y la relación. También puedes añadir un número de teléfono y una foto. Di 'nombre' para ingresar el nombre, 'relación' para seleccionar la relación, y 'teléfono' para el número de contacto. Di 'contacto de emergencia' para marcar o desmarcar esta opción.",
+      )
     }
 
     // Comandos para campos de formulario
@@ -91,15 +107,39 @@ export default function AddFamilyMemberPage() {
       focusField("relation")
     } else if (command.includes("teléfono") || command.includes("móvil") || command.includes("celular")) {
       focusField("phone")
+    } else if (command.includes("emergencia") || command.includes("contacto de emergencia")) {
+      toggleEmergencyContact()
+    }
+
+    // Comandos para seleccionar relación
+    else if (currentFocus === "relation") {
+      // Mapear comandos de voz a valores de relación
+      const relationMap: { [key: string]: string } = {
+        padre: "Padre",
+        madre: "Madre",
+        hijo: "Hijo",
+        hija: "Hija",
+        abuelo: "Abuelo",
+        abuela: "Abuela",
+        mascota: "Mascota",
+        perro: "Mascota",
+        gato: "Mascota",
+        otro: "Otro",
+      }
+
+      for (const [key, value] of Object.entries(relationMap)) {
+        if (command.includes(key)) {
+          setRelation(value)
+          speak(`Relación establecida como: ${value}. Di 'teléfono' para continuar con el siguiente campo.`)
+          break
+        }
+      }
     }
 
     // Comandos para dictado de texto
     else if (currentFocus === "name" && !command.includes("nombre")) {
       setName(command.trim())
       speak(`Nombre establecido como: ${command.trim()}. Di 'relación' para continuar con el siguiente campo.`)
-    } else if (currentFocus === "relation" && !command.includes("relación") && !command.includes("parentesco")) {
-      setRelation(command.trim())
-      speak(`Relación establecida como: ${command.trim()}. Di 'teléfono' para continuar con el siguiente campo.`)
     } else if (
       currentFocus === "phone" &&
       !command.includes("teléfono") &&
@@ -179,6 +219,7 @@ export default function AddFamilyMemberPage() {
         relation,
         phone,
         photoUrl: photoPreview || undefined,
+        isEmergencyContact,
       })
 
       setSuccess("Familiar agregado correctamente.")
@@ -371,6 +412,21 @@ export default function AddFamilyMemberPage() {
       setCameraError("Error al capturar la foto. Por favor, intenta de nuevo.")
       speak("Error al capturar la foto. Por favor, intenta de nuevo.")
     }
+  }
+
+  const toggleEmergencyContact = () => {
+    setIsEmergencyContact((prev) => !prev)
+    speak(`Contacto de emergencia ${!isEmergencyContact ? "activado" : "desactivado"}.`)
+  }
+
+  // Update the provideHelp function to include information about the emergency contact toggle
+  const provideHelp = () => {
+    speak(
+      "Comandos disponibles: Di 'nombre' para ingresar el nombre. Di 'relación' para seleccionar la relación. " +
+        "Di 'teléfono' para ingresar el número de teléfono. Di 'contacto de emergencia' para activar o desactivar esta opción. " +
+        "Di 'foto' o 'tomar foto' para activar la cámara. Di 'capturar' para tomar la foto cuando la cámara esté activa. " +
+        "Di 'guardar' o 'agregar' para finalizar. Di 'volver' para regresar a la pantalla anterior.",
+    )
   }
 
   return (
@@ -582,6 +638,22 @@ export default function AddFamilyMemberPage() {
               placeholder="Número de teléfono"
               className="border-gray-300"
               aria-label="Campo de teléfono. Di 'teléfono' para activar este campo y luego dicta el número."
+            />
+          </div>
+
+          {/* Contacto de emergencia */}
+          <div className="flex items-center justify-between space-y-0 pt-2">
+            <div className="space-y-0.5">
+              <Label htmlFor="emergency-contact" className="text-gray-700">
+                Contacto de emergencia
+              </Label>
+              <p className="text-sm text-gray-500">Recibirás alertas prioritarias para este contacto</p>
+            </div>
+            <Switch
+              id="emergency-contact"
+              checked={isEmergencyContact}
+              onCheckedChange={setIsEmergencyContact}
+              aria-label="Marcar como contacto de emergencia. Di 'contacto de emergencia' para activar o desactivar."
             />
           </div>
 

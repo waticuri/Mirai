@@ -4,7 +4,8 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
 import { useSpeechSynthesis } from "@/hooks/use-speech-synthesis"
-import { Check } from "lucide-react"
+import { Check, HelpCircle } from "lucide-react"
+import { useSpeechRecognition } from "@/hooks/use-speech-recognition"
 
 export default function ConnectDevicePage() {
   const router = useRouter()
@@ -13,6 +14,7 @@ export default function ConnectDevicePage() {
   const [isConnected, setIsConnected] = useState(false)
   const [waveAnimation, setWaveAnimation] = useState(0)
   const [isLoaded, setIsLoaded] = useState(false)
+  const { startListening, stopListening, transcript, resetTranscript } = useSpeechRecognition()
 
   // Animate sound waves
   useEffect(() => {
@@ -52,6 +54,39 @@ export default function ConnectDevicePage() {
       clearTimeout(timer2)
     }
   }, [speak, router])
+
+  // Añadir después de los otros useEffect
+  useEffect(() => {
+    // Iniciar reconocimiento después de un breve retraso
+    const timer = setTimeout(() => {
+      startListening()
+    }, 3000)
+
+    // Manejar comandos
+    if (transcript) {
+      const command = transcript.toLowerCase()
+
+      if (command.includes("volver") || command.includes("atrás") || command.includes("cancelar")) {
+        speak("Cancelando conexión de dispositivo. Volviendo a la pantalla de inicio.")
+        router.push("/")
+      } else if (command.includes("ayuda") || command.includes("asistencia")) {
+        speak(
+          "Estás en la pantalla de conexión de dispositivo. Por favor, enciende tus gafas Mirai manteniendo presionado el botón de encendido. El sistema detectará automáticamente el dispositivo.",
+        )
+      } else if (command.includes("saltar") || command.includes("omitir") || command.includes("continuar")) {
+        speak("Omitiendo conexión de dispositivo. Redirigiendo al panel principal.")
+        router.push("/dashboard")
+      }
+
+      resetTranscript()
+    }
+
+    // Limpiar al desmontar
+    return () => {
+      clearTimeout(timer)
+      stopListening()
+    }
+  }, [transcript, resetTranscript, speak, router, startListening, stopListening])
 
   // Render sound waves
   const renderSoundWaves = () => {
@@ -95,6 +130,17 @@ export default function ConnectDevicePage() {
           </>
         )}
       </div>
+      <button
+        onClick={() => {
+          speak(
+            "Estás en la pantalla de conexión de dispositivo. Por favor, enciende tus gafas Mirai manteniendo presionado el botón de encendido. El sistema detectará automáticamente el dispositivo. Si deseas omitir este paso, di 'saltar'.",
+          )
+        }}
+        className="fixed bottom-4 right-4 bg-white/20 p-2 rounded-full"
+        aria-label="Ayuda con comandos de voz"
+      >
+        <HelpCircle className="h-6 w-6 text-white" />
+      </button>
     </main>
   )
 }

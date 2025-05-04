@@ -75,6 +75,18 @@ export default function EditProfilePage() {
       toggleHelpMode()
     } else if (command.includes("ayuda")) {
       provideHelp()
+    } else if (command.includes("limpiar") || command.includes("reiniciar")) {
+      // Restaurar valores originales
+      if (currentUser) {
+        setName(currentUser.name)
+        setEmail(currentUser.email)
+        setPhotoPreview(currentUser.photoUrl)
+        speak("Formulario reiniciado a los valores originales.")
+      }
+    } else if (command.includes("repetir") || command.includes("instrucciones")) {
+      speak(
+        "Estás en la pantalla de edición de perfil. Puedes modificar tu nombre, correo electrónico y foto. Di 'nombre' para editar tu nombre, 'correo' para tu email, y 'foto' para cambiar tu foto. Cuando hayas terminado, di 'guardar'.",
+      )
     }
 
     // Comandos para campos de formulario
@@ -120,7 +132,7 @@ export default function EditProfilePage() {
     }
 
     resetTranscript()
-  }, [transcript, speak, resetTranscript, currentFocus, isCameraActive])
+  }, [transcript, speak, resetTranscript, currentFocus, isCameraActive, currentUser])
 
   // Función para formatear email dictado
   const formatDictatedEmail = (text: string): string => {

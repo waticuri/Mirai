@@ -15,13 +15,14 @@ import { UserDatabase } from "@/lib/db"
 
 export default function RegisterPage() {
   const router = useRouter()
-  const { speak } = useSpeechSynthesis()
+  const { speak, speaking } = useSpeechSynthesis()
   const { startListening, stopListening, transcript, resetTranscript, listening } = useSpeechRecognition()
   const [isLoaded, setIsLoaded] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [helpMode, setHelpMode] = useState(false)
+  const hasInitializedRef = useRef(false)
 
   // Campos del formulario
   const [name, setName] = useState("")
@@ -37,24 +38,39 @@ export default function RegisterPage() {
   const [countdownActive, setCountdownActive] = useState(false)
   const [countdown, setCountdown] = useState(3)
 
+  // Inicializar la página y activar el micrófono
   useEffect(() => {
     setIsLoaded(true)
+
     // Reproducir mensaje de bienvenida después de un breve retraso
     const timer = setTimeout(() => {
+      console.log("Iniciando mensaje de bienvenida")
       speak(
         "Pantalla de registro. Para registrarte, necesitarás proporcionar tu nombre, correo electrónico y una foto para el reconocimiento facial. Puedes navegar por voz diciendo 'nombre', 'correo', 'foto', 'ayuda', 'registrar' o 'volver'. Para activar la ayuda detallada, di 'modo ayuda'.",
         () => {
+          console.log("Mensaje de bienvenida completado, iniciando reconocimiento de voz")
+          // Asegurarse de que el reconocimiento de voz se inicie después de hablar
           startListening()
+          hasInitializedRef.current = true
         },
       )
     }, 1000)
 
+    // Verificar si el reconocimiento de voz se ha iniciado
+    const checkMicrophoneTimer = setTimeout(() => {
+      if (!listening && hasInitializedRef.current) {
+        console.log("El micrófono no se activó automáticamente, intentando de nuevo")
+        startListening()
+      }
+    }, 5000)
+
     return () => {
       clearTimeout(timer)
+      clearTimeout(checkMicrophoneTimer)
       stopCamera()
       stopListening()
     }
-  }, [speak, startListening, stopListening])
+  }, [speak, startListening, stopListening, listening])
 
   // Manejar comandos de voz
   useEffect(() => {
@@ -75,8 +91,18 @@ export default function RegisterPage() {
       handleRegister({ preventDefault: () => {} } as React.FormEvent)
     } else if (command.includes("modo ayuda")) {
       toggleHelpMode()
-    } else if (command.includes("ayuda")) {
+    } else if (command.includes("ayuda") || command.includes("asistencia") || command.includes("comandos")) {
       provideHelp()
+    } else if (command.includes("limpiar") || command.includes("borrar") || command.includes("reiniciar")) {
+      // Limpiar el formulario
+      setName("")
+      setEmail("")
+      setPhotoPreview(null)
+      speak("Formulario reiniciado. Puedes comenzar de nuevo.")
+    } else if (command.includes("repetir instrucciones") || command.includes("qué debo hacer")) {
+      speak(
+        "Para registrarte, necesitas proporcionar tu nombre, correo electrónico y una foto para el reconocimiento facial. Di 'nombre' para ingresar tu nombre, 'correo' para tu email, y 'foto' para tomar una foto. Cuando hayas completado todos los campos, di 'registrar'.",
+      )
     }
 
     // Comandos para campos de formulario
@@ -123,6 +149,14 @@ export default function RegisterPage() {
 
     resetTranscript()
   }, [transcript, speak, resetTranscript, currentFocus, isCameraActive])
+
+  // Asegurarse de que el micrófono se active cuando la síntesis de voz termine
+  useEffect(() => {
+    if (!speaking && hasInitializedRef.current && !listening) {
+      console.log("La síntesis de voz terminó, activando el micrófono")
+      startListening()
+    }
+  }, [speaking, listening, startListening])
 
   // Función para formatear email dictado
   const formatDictatedEmail = (text: string): string => {

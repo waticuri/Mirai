@@ -5,7 +5,7 @@ import type React from "react"
 import { useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
-import { ChevronLeft, Plus, Users, Trash2 } from "lucide-react"
+import { ChevronLeft, Plus, Users, Trash2, HelpCircle } from "lucide-react"
 import { useSpeechSynthesis } from "@/hooks/use-speech-synthesis"
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition"
 import { UserDatabase, type FamilyMember } from "@/lib/db"
@@ -41,17 +41,42 @@ export default function ParentalPage() {
       handleBack()
     } else if (command.includes("agregar") || command.includes("añadir") || command.includes("nuevo familiar")) {
       handleAddPerson()
-    } else if (command.includes("ayuda") || command.includes("asistencia")) {
+    } else if (command.includes("ayuda") || command.includes("asistencia") || command.includes("comandos")) {
       speak(
-        "Esta es la pantalla de cercanía parental. Aquí puedes configurar alertas cuando tus familiares o mascotas estén cerca. Para agregar un familiar, di 'agregar familiar'. Para volver al panel principal, di 'volver'.",
+        "Esta es la pantalla de cercanía parental. Aquí puedes configurar alertas cuando tus familiares o mascotas estén cerca. Para agregar un familiar, di 'agregar familiar'. Para volver al panel principal, di 'volver'. Para seleccionar un familiar, di su nombre.",
       )
+    } else if (command.includes("listar") || command.includes("mostrar") || command.includes("quiénes están")) {
+      if (people.length > 0) {
+        speak(
+          `Tienes ${people.length} ${people.length === 1 ? "persona" : "personas"} configuradas: ${people.map((p) => p.name).join(", ")}.`,
+        )
+      } else {
+        speak("No tienes personas configuradas. Di 'agregar familiar' para comenzar.")
+      }
+    } else if (command.includes("eliminar") || command.includes("borrar") || command.includes("quitar")) {
+      // Buscar si el comando menciona alguna persona para eliminarla
+      people.forEach((person) => {
+        if (command.includes(person.name.toLowerCase())) {
+          speak(`¿Estás seguro de que deseas eliminar a ${person.name}? Di 'sí' para confirmar o 'no' para cancelar.`)
+          // Aquí se podría implementar un estado para confirmar la eliminación
+        }
+      })
+
+      if (!command.includes("familiar") && !people.some((p) => command.includes(p.name.toLowerCase()))) {
+        speak("Para eliminar un familiar, di 'eliminar' seguido del nombre del familiar.")
+      }
+    } else if (command.includes("sí") || command.includes("confirmar")) {
+      // Lógica para confirmar eliminación
+      speak("Funcionalidad de confirmación por voz en desarrollo.")
+    } else if (command.includes("no") || command.includes("cancelar")) {
+      speak("Operación cancelada.")
     }
 
     // Buscar si el comando menciona alguna persona
     people.forEach((person) => {
       if (command.includes(person.name.toLowerCase())) {
         speak(
-          `Has seleccionado a ${person.name}, ${person.relation}. Aquí podrás configurar las alertas de proximidad para esta persona.`,
+          `Has seleccionado a ${person.name}, ${person.relation}. ${person.isEmergencyContact ? "Este contacto está marcado como contacto de emergencia." : ""} Aquí podrás configurar las alertas de proximidad para esta persona.`,
         )
       }
     })
@@ -178,7 +203,14 @@ export default function ParentalPage() {
                   </div>
                   <div>
                     <h3 className="font-medium">{person.name}</h3>
-                    <p className="text-sm text-gray-500">{person.relation}</p>
+                    <div className="flex items-center">
+                      <p className="text-sm text-gray-500">{person.relation}</p>
+                      {person.isEmergencyContact && (
+                        <span className="ml-2 px-1.5 py-0.5 text-xs bg-red-100 text-red-800 rounded-full">
+                          Emergencia
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
                 <button
@@ -215,6 +247,17 @@ export default function ParentalPage() {
             Salir
           </button>
         </div>
+        <button
+          onClick={() => {
+            speak(
+              "Esta es la pantalla de cercanía parental. Aquí puedes configurar alertas cuando tus familiares o mascotas estén cerca. Para agregar un familiar, di 'agregar familiar'. Para volver al panel principal, di 'volver'. Para seleccionar un familiar, di su nombre.",
+            )
+          }}
+          className="fixed bottom-4 right-4 bg-[#6a3de8]/20 p-2 rounded-full"
+          aria-label="Ayuda con comandos de voz"
+        >
+          <HelpCircle className="h-6 w-6 text-[#6a3de8]" />
+        </button>
       </div>
     </main>
   )

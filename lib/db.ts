@@ -15,6 +15,7 @@ export interface FamilyMember {
   phone?: string
   photoUrl?: string
   createdAt: string
+  isEmergencyContact?: boolean
 }
 
 // Clase para manejar la base de datos de usuarios

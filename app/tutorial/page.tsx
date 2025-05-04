@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
-import { ChevronLeft, Eye, Mic, Bell, MapPin, Battery, Wifi, HelpCircle } from "lucide-react"
+import { ChevronLeft, Eye, Mic, Bell, MapPin, Battery, Wifi, HelpCircle, MicOff } from "lucide-react"
 import { useSpeechSynthesis } from "@/hooks/use-speech-synthesis"
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition"
 
@@ -13,7 +13,7 @@ export default function TutorialPage() {
   const { startListening, stopListening, transcript, resetTranscript, listening } = useSpeechRecognition()
   const [isLoaded, setIsLoaded] = useState(false)
   const [activeFeature, setActiveFeature] = useState<number | null>(null)
-  const checkIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const hasStartedListeningRef = useRef(false)
 
   // Lista de funcionalidades con ejemplos de comandos
   const features = [
@@ -73,8 +73,19 @@ export default function TutorialPage() {
       speak(
         "Para navegar por el tutorial, puedes decir el nombre de la función sobre la que quieres saber más, decir 'siguiente' para pasar a la siguiente función, o decir 'volver' para regresar al panel principal.",
       )
-    } else if (command.includes("siguiente")) {
+    } else if (command.includes("siguiente") || command.includes("avanzar")) {
       handleNextFeature()
+    } else if (command.includes("anterior") || command.includes("previo") || command.includes("regresar")) {
+      handlePreviousFeature()
+    } else if (command.includes("repetir") || command.includes("explicar de nuevo")) {
+      if (activeFeature !== null) {
+        const feature = features.find((f) => f.id === activeFeature)
+        if (feature) {
+          speak(`${feature.title}. ${feature.description} Ejemplo de comando: ${feature.command}`)
+        }
+      } else {
+        speak("No hay ninguna función seleccionada. Di el nombre de una función para seleccionarla.")
+      }
     }
 
     // Buscar si el comando menciona alguna funcionalidad
@@ -94,7 +105,7 @@ export default function TutorialPage() {
     })
 
     resetTranscript()
-  }, [transcript, speak, resetTranscript])
+  }, [transcript, speak, resetTranscript, activeFeature])
 
   // Inicializar página
   useEffect(() => {
@@ -104,28 +115,23 @@ export default function TutorialPage() {
       speak(
         "Tutorial de funcionalidades. Aquí puedes aprender a usar todas las características de tus gafas Mirai. Las funciones disponibles son: Reconocimiento visual, Comandos de voz, Notificaciones, Navegación, Gestión de batería y Conectividad. Selecciona una función, di su nombre o di 'siguiente' para navegar entre ellas.",
         () => {
-          // Iniciar reconocimiento de voz solo después de que termine de hablar
-          startListening()
-
-          // Set up a less frequent check to ensure speech recognition is working
-          checkIntervalRef.current = setInterval(() => {
-            if (!listening) {
-              console.log("Speech recognition not active, attempting to restart...")
-              startListening()
-            }
-          }, 10000) // Check every 10 seconds
+          // Solo iniciar el reconocimiento de voz una vez después de la introducción
+          if (!hasStartedListeningRef.current) {
+            hasStartedListeningRef.current = true
+            startListening()
+          }
         },
       )
     }, 1000)
 
     return () => {
-      if (timer) clearTimeout(timer)
-      if (checkIntervalRef.current) clearInterval(checkIntervalRef.current)
+      clearTimeout(timer)
       stopListening()
     }
   }, [speak, startListening, stopListening])
 
   const handleBack = () => {
+    stopListening() // Detener antes de navegar
     speak("Volviendo al panel principal")
     router.push("/dashboard")
   }
@@ -162,6 +168,25 @@ export default function TutorialPage() {
     handleFeatureClick(nextFeatureId)
   }
 
+  // Añadir función para navegar a la característica anterior
+  const handlePreviousFeature = () => {
+    // Si no hay función activa, seleccionar la última
+    if (activeFeature === null) {
+      handleFeatureClick(features[features.length - 1].id)
+      return
+    }
+
+    // Encontrar el índice de la función actual
+    const currentIndex = features.findIndex((f) => f.id === activeFeature)
+
+    // Calcular el ID de la función anterior (con ciclo al final si es la primera)
+    const prevIndex = (currentIndex - 1 + features.length) % features.length
+    const prevFeatureId = features[prevIndex].id
+
+    // Activar la función anterior
+    handleFeatureClick(prevFeatureId)
+  }
+
   return (
     <main className="flex min-h-screen flex-col bg-white">
       {/* Header con gradiente */}
@@ -171,6 +196,17 @@ export default function TutorialPage() {
           <span className="ml-2">Volver</span>
         </button>
         <h1 className="text-white text-lg font-medium flex-1 text-center mr-8">Tutorial de funcionalidades</h1>
+
+        {/* Indicador de estado del micrófono */}
+        <div className="flex items-center gap-2">
+          {listening ? (
+            <div className="animate-pulse">
+              <Mic className="h-5 w-5 text-white" aria-label="Micrófono activo" />
+            </div>
+          ) : (
+            <MicOff className="h-5 w-5 text-white/50" aria-label="Micrófono inactivo" />
+          )}
+        </div>
       </header>
 
       {/* Contenido principal */}

@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useSpeechSynthesis } from "@/hooks/use-speech-synthesis"
 import { UserDatabase } from "@/lib/db"
+import { useSpeechRecognition } from "@/hooks/use-speech-recognition"
+import { HelpCircle } from "lucide-react"
 
 export default function CameraPage() {
   const [isCameraActive, setIsCameraActive] = useState(false)
@@ -14,6 +16,7 @@ export default function CameraPage() {
   const router = useRouter()
   const { speak } = useSpeechSynthesis()
   const [waveAnimation, setWaveAnimation] = useState(0)
+  const { startListening, stopListening, transcript, resetTranscript } = useSpeechRecognition()
 
   // Animar las ondas de sonido
   useEffect(() => {
@@ -193,6 +196,39 @@ export default function CameraPage() {
     )
   }
 
+  // Añadir después de los otros useEffect
+  useEffect(() => {
+    // Iniciar reconocimiento después de un breve retraso
+    const timer = setTimeout(() => {
+      startListening()
+    }, 3000)
+
+    // Manejar comandos
+    if (transcript) {
+      const command = transcript.toLowerCase()
+
+      if (command.includes("volver") || command.includes("atrás") || command.includes("cancelar")) {
+        speak("Cancelando reconocimiento facial. Volviendo a la pantalla de inicio.")
+        router.push("/")
+      } else if (command.includes("ayuda") || command.includes("asistencia")) {
+        speak(
+          "Estás en la pantalla de reconocimiento facial. Por favor, acércate a la cámara para que el sistema pueda identificarte. Si deseas cancelar, di 'cancelar'.",
+        )
+      } else if (command.includes("registrar") || command.includes("crear cuenta")) {
+        speak("Redirigiendo a la pantalla de registro.")
+        router.push("/register")
+      }
+
+      resetTranscript()
+    }
+
+    // Limpiar al desmontar
+    return () => {
+      clearTimeout(timer)
+      stopListening()
+    }
+  }, [transcript, resetTranscript, speak, router, startListening, stopListening])
+
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-b from-[#6a3de8] via-[#3b82f6] to-[#06b6d4] p-4">
       {showWelcome ? (
@@ -234,6 +270,17 @@ export default function CameraPage() {
           </div>
         </div>
       )}
+      <button
+        onClick={() => {
+          speak(
+            "Estás en la pantalla de reconocimiento facial. Por favor, acércate a la cámara para que el sistema pueda identificarte. Si deseas cancelar, di 'cancelar'.",
+          )
+        }}
+        className="fixed bottom-4 right-4 bg-white/20 p-2 rounded-full"
+        aria-label="Ayuda con comandos de voz"
+      >
+        <HelpCircle className="h-6 w-6 text-white" />
+      </button>
     </main>
   )
 }
