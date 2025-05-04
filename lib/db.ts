@@ -4,6 +4,7 @@ export interface User {
   name: string
   email: string
   photoUrl: string // Base64 de la imagen
+  voicePassphrase?: string // Frase de voz para reconocimiento
   createdAt: string
   hasConnectedDevice?: boolean
 }
@@ -119,13 +120,29 @@ export class UserDatabase {
     localStorage.removeItem(this.CURRENT_USER_KEY)
   }
 
-  // Simular reconocimiento facial
-  // En una aplicación real, esto utilizaría algoritmos de comparación de imágenes
-  static simulateFacialRecognition(): User | null {
-    // En una implementación real, aquí se compararía la imagen capturada
-    // con las imágenes almacenadas de los usuarios
+  // Simular reconocimiento de voz
+  static simulateVoiceRecognition(voicePassphrase: string): User | null {
+    // En una implementación real, aquí se compararía la voz capturada
+    // con las voces almacenadas de los usuarios usando algoritmos de reconocimiento de voz
 
-    // Para esta simulación, simplemente devolvemos el primer usuario
+    // Para esta simulación, simplemente verificamos si hay algún usuario
+    // y guardamos la frase para futuros inicios de sesión
+    const users = this.getUsers()
+    if (users.length === 0) return null
+
+    const recognizedUser = users[0]
+
+    // Guardar la frase de voz para futuros inicios de sesión
+    if (!recognizedUser.voicePassphrase) {
+      this.updateUser(recognizedUser.id, { voicePassphrase })
+    }
+
+    this.setCurrentUser(recognizedUser.id)
+    return recognizedUser
+  }
+
+  // Mantener el método de reconocimiento facial para compatibilidad
+  static simulateFacialRecognition(): User | null {
     const users = this.getUsers()
     if (users.length === 0) return null
 

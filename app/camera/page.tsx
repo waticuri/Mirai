@@ -1,22 +1,21 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useSpeechSynthesis } from "@/hooks/use-speech-synthesis"
 import { UserDatabase } from "@/lib/db"
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition"
-import { HelpCircle } from "lucide-react"
+import { HelpCircle, Mic, MicOff } from "lucide-react"
 
-export default function CameraPage() {
-  const [isCameraActive, setIsCameraActive] = useState(false)
+export default function VoiceRecognitionPage() {
   const [isRecognizing, setIsRecognizing] = useState(false)
   const [showWelcome, setShowWelcome] = useState(true)
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [voicePassphrase, setVoicePassphrase] = useState("")
+  const [recognitionStep, setRecognitionStep] = useState(0)
+  const [waveAnimation, setWaveAnimation] = useState(0)
   const router = useRouter()
   const { speak } = useSpeechSynthesis()
-  const [waveAnimation, setWaveAnimation] = useState(0)
-  const { startListening, stopListening, transcript, resetTranscript } = useSpeechRecognition()
+  const { startListening, stopListening, transcript, resetTranscript, listening } = useSpeechRecognition()
 
   // Animar las ondas de sonido
   useEffect(() => {
@@ -26,160 +25,94 @@ export default function CameraPage() {
     return () => clearInterval(interval)
   }, [])
 
-  // Inicializar cámara para reconocimiento facial
+  // Inicializar reconocimiento de voz
   useEffect(() => {
     speak("Bienvenido")
 
     // Mostrar pantalla de bienvenida por 2 segundos
     setTimeout(() => {
       setShowWelcome(false)
-      setIsCameraActive(true)
-      speak("Acércate a la cámara para iniciar sesión mediante reconocimiento facial.")
-
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        navigator.mediaDevices
-          .getUserMedia({ video: { facingMode: "user" } })
-          .then((stream) => {
-            if (videoRef.current) {
-              videoRef.current.srcObject = stream
-              videoRef.current.onloadedmetadata = () => {
-                // Comenzar a dibujar el marco de reconocimiento facial después de que el video esté listo
-                setTimeout(() => {
-                  setIsRecognizing(true)
-                  simulateFacialRecognition()
-                }, 1500)
-              }
-            }
-          })
-          .catch((err) => {
-            console.error("Error accessing camera:", err)
-            speak("No se pudo acceder a la cámara.")
-          })
-      }
+      setIsRecognizing(true)
+      speak("Por favor, di tu frase de acceso para iniciar sesión mediante reconocimiento de voz.")
+      startListening()
     }, 2000)
 
     return () => {
-      // Limpiar stream de la cámara al desmontar
-      if (videoRef.current && videoRef.current.srcObject) {
-        const tracks = (videoRef.current.srcObject as MediaStream).getTracks()
-        tracks.forEach((track) => track.stop())
-      }
+      stopListening()
     }
-  }, [speak, router])
+  }, [speak, router, startListening, stopListening])
 
-  // Dibujar puntos de reconocimiento facial simulados
+  // Manejar el reconocimiento de voz
   useEffect(() => {
-    if (!isRecognizing || !canvasRef.current || !videoRef.current) return
+    if (!transcript || !isRecognizing) return
 
-    const ctx = canvasRef.current.getContext("2d")
-    if (!ctx) return
+    console.log("Frase recibida:", transcript)
+    setVoicePassphrase(transcript)
 
-    const drawFacialRecognitionPoints = () => {
-      ctx.clearRect(0, 0, canvasRef.current!.width, canvasRef.current!.height)
+    // Simular proceso de reconocimiento de voz
+    setRecognitionStep(1) // Comenzar análisis
 
-      // Dibujar puntos simulados de reconocimiento facial
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.8)"
-      ctx.lineWidth = 1
+    setTimeout(() => {
+      setRecognitionStep(2) // Análisis en proceso
 
-      // Centro aproximado de la cara
-      const centerX = canvasRef.current!.width / 2
-      const centerY = canvasRef.current!.height / 2
-      const faceWidth = canvasRef.current!.width * 0.6
-      const faceHeight = canvasRef.current!.height * 0.8
+      setTimeout(() => {
+        // Simular el reconocimiento de voz
+        const recognizedUser = UserDatabase.simulateVoiceRecognition(transcript)
 
-      // Dibujar líneas para simular el reconocimiento facial
-      // Contorno facial
-      ctx.beginPath()
-      ctx.ellipse(centerX, centerY, faceWidth / 2, faceHeight / 2, 0, 0, 2 * Math.PI)
-      ctx.stroke()
+        if (recognizedUser) {
+          setRecognitionStep(3) // Reconocimiento exitoso
+          speak(`Reconocimiento de voz completado. Bienvenido, ${recognizedUser.name}.`)
 
-      // Líneas horizontales para ojos, nariz y boca
-      const eyeLevel = centerY - faceHeight * 0.15
-      const noseLevel = centerY + faceHeight * 0.05
-      const mouthLevel = centerY + faceHeight * 0.25
+          // Check if this is the first login
+          const isFirstLogin = !recognizedUser.hasConnectedDevice
 
-      // Ojos
-      const eyeWidth = faceWidth * 0.2
-      ctx.beginPath()
-      ctx.ellipse(centerX - faceWidth * 0.2, eyeLevel, eyeWidth / 2, eyeWidth / 4, 0, 0, 2 * Math.PI)
-      ctx.stroke()
+          // Update user to mark device as connected for future logins
+          if (isFirstLogin && recognizedUser.id) {
+            UserDatabase.updateUser(recognizedUser.id, { hasConnectedDevice: true })
+          }
 
-      ctx.beginPath()
-      ctx.ellipse(centerX + faceWidth * 0.2, eyeLevel, eyeWidth / 2, eyeWidth / 4, 0, 0, 2 * Math.PI)
-      ctx.stroke()
+          // Redirect to device connection page for first login, otherwise to dashboard
+          setTimeout(() => {
+            if (isFirstLogin) {
+              router.push("/connect-device")
+            } else {
+              router.push("/dashboard")
+            }
+          }, 1500)
+        } else {
+          // Si no hay usuarios registrados o no se reconoce la voz
+          setRecognitionStep(4) // Reconocimiento fallido
+          speak("No se pudo reconocer tu voz. Por favor, regístrate primero o intenta de nuevo.")
+          setTimeout(() => {
+            router.push("/register")
+          }, 1500)
+        }
+      }, 2000)
+    }, 1000)
 
-      // Nariz
-      ctx.beginPath()
-      ctx.moveTo(centerX, eyeLevel + 10)
-      ctx.lineTo(centerX, noseLevel)
-      ctx.stroke()
+    resetTranscript()
+  }, [transcript, speak, resetTranscript, router, isRecognizing])
 
-      ctx.beginPath()
-      ctx.moveTo(centerX - 10, noseLevel)
-      ctx.lineTo(centerX + 10, noseLevel)
-      ctx.stroke()
+  // Añadir manejo de comandos adicionales
+  useEffect(() => {
+    if (!transcript || recognitionStep > 0) return
 
-      // Boca
-      ctx.beginPath()
-      ctx.ellipse(centerX, mouthLevel, faceWidth * 0.25, faceWidth * 0.1, 0, 0, Math.PI)
-      ctx.stroke()
+    const command = transcript.toLowerCase()
 
-      // Puntos adicionales en la cara
-      const points = [
-        [centerX - faceWidth * 0.3, centerY - faceHeight * 0.3],
-        [centerX + faceWidth * 0.3, centerY - faceHeight * 0.3],
-        [centerX - faceWidth * 0.35, centerY],
-        [centerX + faceWidth * 0.35, centerY],
-        [centerX - faceWidth * 0.25, centerY + faceHeight * 0.35],
-        [centerX + faceWidth * 0.25, centerY + faceHeight * 0.35],
-      ]
-
-      points.forEach(([x, y]) => {
-        ctx.beginPath()
-        ctx.arc(x, y, 2, 0, 2 * Math.PI)
-        ctx.stroke()
-      })
+    if (command.includes("volver") || command.includes("atrás") || command.includes("cancelar")) {
+      speak("Cancelando reconocimiento de voz. Volviendo a la pantalla de inicio.")
+      router.push("/")
+    } else if (command.includes("ayuda") || command.includes("asistencia")) {
+      speak(
+        "Estás en la pantalla de reconocimiento de voz. Por favor, di tu frase de acceso para que el sistema pueda identificarte. Si deseas cancelar, di 'cancelar'.",
+      )
+    } else if (command.includes("registrar") || command.includes("crear cuenta")) {
+      speak("Redirigiendo a la pantalla de registro.")
+      router.push("/register")
     }
 
-    const interval = setInterval(drawFacialRecognitionPoints, 100)
-    return () => clearInterval(interval)
-  }, [isRecognizing])
-
-  // Simular reconocimiento facial
-  const simulateFacialRecognition = () => {
-    setTimeout(() => {
-      // Simular el reconocimiento facial
-      const recognizedUser = UserDatabase.simulateFacialRecognition()
-
-      if (recognizedUser) {
-        speak(`Reconocimiento facial completado. Bienvenido, ${recognizedUser.name}.`)
-
-        // Check if this is the first login
-        const isFirstLogin = !recognizedUser.hasConnectedDevice
-
-        // Update user to mark device as connected for future logins
-        if (isFirstLogin && recognizedUser.id) {
-          UserDatabase.updateUser(recognizedUser.id, { hasConnectedDevice: true })
-        }
-
-        // Redirect to device connection page for first login, otherwise to dashboard
-        setTimeout(() => {
-          if (isFirstLogin) {
-            router.push("/connect-device")
-          } else {
-            router.push("/dashboard")
-          }
-        }, 1500)
-      } else {
-        // Si no hay usuarios registrados
-        speak("No se encontró ningún usuario registrado. Por favor, regístrate primero.")
-        setTimeout(() => {
-          router.push("/register")
-        }, 1500)
-        return
-      }
-    }, 3000)
-  }
+    resetTranscript()
+  }, [transcript, resetTranscript, speak, router, recognitionStep])
 
   // Renderizar ondas de sonido
   const renderSoundWaves = () => {
@@ -196,38 +129,23 @@ export default function CameraPage() {
     )
   }
 
-  // Añadir después de los otros useEffect
-  useEffect(() => {
-    // Iniciar reconocimiento después de un breve retraso
-    const timer = setTimeout(() => {
-      startListening()
-    }, 3000)
-
-    // Manejar comandos
-    if (transcript) {
-      const command = transcript.toLowerCase()
-
-      if (command.includes("volver") || command.includes("atrás") || command.includes("cancelar")) {
-        speak("Cancelando reconocimiento facial. Volviendo a la pantalla de inicio.")
-        router.push("/")
-      } else if (command.includes("ayuda") || command.includes("asistencia")) {
-        speak(
-          "Estás en la pantalla de reconocimiento facial. Por favor, acércate a la cámara para que el sistema pueda identificarte. Si deseas cancelar, di 'cancelar'.",
-        )
-      } else if (command.includes("registrar") || command.includes("crear cuenta")) {
-        speak("Redirigiendo a la pantalla de registro.")
-        router.push("/register")
-      }
-
-      resetTranscript()
+  // Renderizar el estado del reconocimiento
+  const renderRecognitionStatus = () => {
+    switch (recognitionStep) {
+      case 0:
+        return "Di tu frase de acceso"
+      case 1:
+        return "Analizando voz..."
+      case 2:
+        return "Verificando identidad..."
+      case 3:
+        return "¡Reconocimiento exitoso!"
+      case 4:
+        return "No se pudo reconocer tu voz"
+      default:
+        return "Di tu frase de acceso"
     }
-
-    // Limpiar al desmontar
-    return () => {
-      clearTimeout(timer)
-      stopListening()
-    }
-  }, [transcript, resetTranscript, speak, router, startListening, stopListening])
+  }
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-b from-[#6a3de8] via-[#3b82f6] to-[#06b6d4] p-4">
@@ -238,42 +156,36 @@ export default function CameraPage() {
           <p className="text-white text-xl mt-4">Bienvenido</p>
         </div>
       ) : (
-        // Pantalla de reconocimiento facial
+        // Pantalla de reconocimiento de voz
         <div className="flex flex-col items-center justify-center w-full max-w-xs">
-          <div className="relative w-64 h-64 rounded-full overflow-hidden bg-white/10 mb-8">
-            {isCameraActive && (
-              <>
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="absolute inset-0 w-full h-full object-cover rounded-full"
-                />
-                <canvas
-                  ref={canvasRef}
-                  width={256}
-                  height={256}
-                  className="absolute inset-0 w-full h-full object-cover rounded-full"
-                />
-              </>
+          <div className="relative w-64 h-64 rounded-full overflow-hidden bg-white/10 mb-8 flex flex-col items-center justify-center">
+            {listening ? (
+              <div className="animate-pulse">
+                <Mic className="h-16 w-16 text-white mb-4" />
+              </div>
+            ) : (
+              <MicOff className="h-16 w-16 text-white/50 mb-4" />
+            )}
+
+            {renderSoundWaves()}
+
+            {voicePassphrase && (
+              <div className="mt-4 text-white text-center px-4">
+                <p className="text-sm opacity-80">"{voicePassphrase}"</p>
+              </div>
             )}
           </div>
 
           <div className="flex flex-col items-center">
-            {renderSoundWaves()}
-            <p className="text-white text-center mt-4">
-              Acércate a la cámara para
-              <br />
-              iniciar sesión
-            </p>
+            <p className="text-white text-center text-xl font-medium mb-2">{renderRecognitionStatus()}</p>
+            <p className="text-white/80 text-center text-sm">{recognitionStep === 0 && "Tu voz es tu contraseña"}</p>
           </div>
         </div>
       )}
       <button
         onClick={() => {
           speak(
-            "Estás en la pantalla de reconocimiento facial. Por favor, acércate a la cámara para que el sistema pueda identificarte. Si deseas cancelar, di 'cancelar'.",
+            "Estás en la pantalla de reconocimiento de voz. Por favor, di tu frase de acceso para que el sistema pueda identificarte. Si deseas cancelar, di 'cancelar'.",
           )
         }}
         className="fixed bottom-4 right-4 bg-white/20 p-2 rounded-full"

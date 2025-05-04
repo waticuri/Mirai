@@ -60,8 +60,8 @@ export default function LoginPage() {
 
   const handleLogin = () => {
     stopListening() // Detener el reconocimiento antes de navegar
-    speak("Iniciando reconocimiento facial. Por favor, mira a la cámara.")
-    // Redirigir a la página de cámara para reconocimiento facial
+    speak("Iniciando reconocimiento de voz. Por favor, di tu frase de acceso.")
+    // Redirigir a la página de reconocimiento de voz
     setTimeout(() => {
       router.push("/camera")
     }, 1500)
@@ -97,7 +97,7 @@ export default function LoginPage() {
           onClick={handleLogin}
           className="bg-white text-gray-700 hover:bg-gray-100 rounded-full px-10 py-6 text-lg font-medium mb-4 w-64"
         >
-          Iniciar sesión
+          Iniciar Sesión
         </Button>
 
         {/* Enlace para registrarse */}
