@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useSpeechSynthesis } from "@/hooks/use-speech-synthesis"
 import { Camera, Upload, X, Check } from "lucide-react"
+import { UserDatabase } from "@/lib/db"
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -17,6 +18,11 @@ export default function RegisterPage() {
   const [isLoaded, setIsLoaded] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  // Campos del formulario
+  const [name, setName] = useState("")
+  const [email, setEmail] = useState("")
 
   // Estado para la captura de cámara
   const [isCameraActive, setIsCameraActive] = useState(false)
@@ -41,18 +47,35 @@ export default function RegisterPage() {
 
   const handleRegister = (e: React.FormEvent) => {
     e.preventDefault()
+    setError(null)
 
     if (!photoPreview) {
       speak("Por favor, agrega una foto para el reconocimiento facial antes de continuar.")
+      setError("Se requiere una foto para el reconocimiento facial")
       return
     }
 
-    speak(
-      "Registro completado. Tu foto ha sido guardada para el reconocimiento facial. Redirigiendo a la pantalla de inicio de sesión.",
-    )
-    setTimeout(() => {
-      router.push("/")
-    }, 2000)
+    try {
+      // Crear el usuario en la base de datos
+      const newUser = UserDatabase.createUser({
+        name,
+        email,
+        photoUrl: photoPreview,
+      })
+
+      // Establecer como usuario actual
+      UserDatabase.setCurrentUser(newUser.id)
+
+      speak(
+        "Registro completado. Tu foto ha sido guardada para el reconocimiento facial. Redirigiendo al panel principal.",
+      )
+      setTimeout(() => {
+        router.push("/dashboard")
+      }, 2000)
+    } catch (err: any) {
+      speak(`Error al registrar: ${err.message}`)
+      setError(err.message)
+    }
   }
 
   const handleBack = () => {
@@ -97,7 +120,9 @@ export default function RegisterPage() {
         videoRef.current.srcObject = stream
         streamRef.current = stream
         setIsCameraActive(true)
-        speak("Cámara activada. Posiciónate en el centro y pulsa el botón para capturar tu foto.")
+        speak(
+          "Cámara activada. Por favor, ubícate frente a la cámara, asegurando que tu rostro esté bien iluminado y centrado. Cuando estés listo, pulsa el botón para capturar tu foto.",
+        )
       }
     } catch (err) {
       console.error("Error al acceder a la cámara:", err)
@@ -158,6 +183,11 @@ export default function RegisterPage() {
           onSubmit={handleRegister}
           className="w-full space-y-6 bg-white/10 backdrop-blur-md p-6 rounded-xl border border-white/20"
         >
+          {/* Mensaje de error */}
+          {error && (
+            <div className="bg-red-500/20 border border-red-500/50 text-white p-3 rounded-md text-sm">{error}</div>
+          )}
+
           {/* Foto para reconocimiento facial */}
           <div className="flex flex-col items-center mb-6">
             <p className="text-white text-sm mb-3">Foto para reconocimiento facial</p>
@@ -253,6 +283,8 @@ export default function RegisterPage() {
             </Label>
             <Input
               id="name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
               placeholder="Ingresa tu nombre"
               className="bg-white/20 border-white/30 text-white placeholder:text-white/50"
               required
@@ -266,20 +298,9 @@ export default function RegisterPage() {
             <Input
               id="email"
               type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               placeholder="correo@ejemplo.com"
-              className="bg-white/20 border-white/30 text-white placeholder:text-white/50"
-              required
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="password" className="text-white">
-              Contraseña
-            </Label>
-            <Input
-              id="password"
-              type="password"
-              placeholder="••••••••"
               className="bg-white/20 border-white/30 text-white placeholder:text-white/50"
               required
             />

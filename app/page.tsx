@@ -23,8 +23,7 @@ export default function LoginPage() {
 
   const handleLogin = () => {
     speak("Iniciando reconocimiento facial")
-    // Aquí iría la lógica para activar la cámara y el reconocimiento facial
-    // Por ahora, simulamos una redirección después de un breve retraso
+    // Redirigir a la página de cámara para reconocimiento facial
     setTimeout(() => {
       router.push("/camera")
     }, 1500)
@@ -55,7 +54,6 @@ export default function LoginPage() {
           <p className="text-white text-xl mt-2 font-bold font-montserrat">MirAI</p>
         </div>
 
-        {/* Botón de inicio de sesión */}
         <Button
           onClick={handleLogin}
           className="bg-white text-gray-700 hover:bg-gray-100 rounded-full px-10 py-6 text-lg font-medium mb-4 w-64"

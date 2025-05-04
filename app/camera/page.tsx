@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useSpeechSynthesis } from "@/hooks/use-speech-synthesis"
+import { UserDatabase } from "@/lib/db"
 
 export default function CameraPage() {
   const [isCameraActive, setIsCameraActive] = useState(false)
@@ -30,7 +31,7 @@ export default function CameraPage() {
     setTimeout(() => {
       setShowWelcome(false)
       setIsCameraActive(true)
-      speak("Acércate a la cámara para iniciar sesión. Comparando con tu foto registrada.")
+      speak("Acércate a la cámara para iniciar sesión mediante reconocimiento facial.")
 
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         navigator.mediaDevices
@@ -61,7 +62,7 @@ export default function CameraPage() {
         tracks.forEach((track) => track.stop())
       }
     }
-  }, [speak])
+  }, [speak, router])
 
   // Dibujar puntos de reconocimiento facial simulados
   useEffect(() => {
@@ -144,7 +145,20 @@ export default function CameraPage() {
   // Simular reconocimiento facial
   const simulateFacialRecognition = () => {
     setTimeout(() => {
-      speak("Reconocimiento facial completado. Coincidencia encontrada con tu foto registrada. Iniciando sesión.")
+      // Simular el reconocimiento facial
+      const recognizedUser = UserDatabase.simulateFacialRecognition()
+
+      if (recognizedUser) {
+        speak(`Reconocimiento facial completado. Bienvenido, ${recognizedUser.name}. Iniciando sesión.`)
+      } else {
+        // Si no hay usuarios registrados
+        speak("No se encontró ningún usuario registrado. Por favor, regístrate primero.")
+        setTimeout(() => {
+          router.push("/register")
+        }, 1500)
+        return
+      }
+
       setTimeout(() => {
         router.push("/dashboard")
       }, 1500)

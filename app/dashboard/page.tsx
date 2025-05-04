@@ -6,6 +6,7 @@ import Image from "next/image"
 import { Settings, Users, LogOut, ChevronRight } from "lucide-react"
 import { useSpeechSynthesis } from "@/hooks/use-speech-synthesis"
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition"
+import { UserDatabase, type User } from "@/lib/db"
 
 export default function Dashboard() {
   const router = useRouter()
@@ -13,6 +14,23 @@ export default function Dashboard() {
   const { startListening, stopListening, transcript, resetTranscript, listening } = useSpeechRecognition()
   const [isLoaded, setIsLoaded] = useState(false)
   const checkIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  const [userName, setUserName] = useState("Usuario")
+  const [currentUser, setCurrentUser] = useState<User | null>(null)
+
+  // Verificar si hay un usuario actual
+  useEffect(() => {
+    const user = UserDatabase.getCurrentUser()
+    if (!user) {
+      speak("No hay sesión activa. Redirigiendo a la pantalla de inicio de sesión.")
+      setTimeout(() => {
+        router.push("/")
+      }, 1500)
+      return
+    }
+
+    setUserName(user.name.split(" ")[0]) // Usar solo el primer nombre
+    setCurrentUser(user) // Guardar el usuario completo
+  }, [router, speak])
 
   // Manejar comandos de voz
   useEffect(() => {
@@ -41,18 +59,21 @@ export default function Dashboard() {
     setIsLoaded(true)
 
     const timer = setTimeout(() => {
-      speak("Bienvenido al panel de control. Tus gafas Mirai están conectadas y con 98% de batería.", () => {
-        // Iniciar reconocimiento de voz solo después de que termine de hablar
-        startListening()
+      speak(
+        `Bienvenido al panel de control, ${userName}. Tus gafas Mirai están conectadas y con 98% de batería.`,
+        () => {
+          // Iniciar reconocimiento de voz solo después de que termine de hablar
+          startListening()
 
-        // Set up a less frequent check to ensure speech recognition is working
-        checkIntervalRef.current = setInterval(() => {
-          if (!listening) {
-            console.log("Speech recognition not active, attempting to restart...")
-            startListening()
-          }
-        }, 10000) // Check every 10 seconds
-      })
+          // Set up a less frequent check to ensure speech recognition is working
+          checkIntervalRef.current = setInterval(() => {
+            if (!listening) {
+              console.log("Speech recognition not active, attempting to restart...")
+              startListening()
+            }
+          }, 10000) // Check every 10 seconds instead of 5
+        },
+      )
     }, 1000)
 
     return () => {
@@ -60,11 +81,12 @@ export default function Dashboard() {
       if (checkIntervalRef.current) clearInterval(checkIntervalRef.current)
       stopListening()
     }
-  }, [speak, startListening, stopListening])
+  }, [speak, startListening, stopListening, userName])
 
   // Manejar cierre de sesión
   const handleLogout = () => {
     speak("Cerrando sesión")
+    UserDatabase.logout()
     setTimeout(() => {
       router.push("/")
     }, 1500)
@@ -77,10 +99,19 @@ export default function Dashboard() {
         <div className="w-8"></div> {/* Spacer para centrar el logo */}
         <Image src="/images/mirai-logo.png" alt="MirAI Logo" width={40} height={40} className="object-contain" />
         <div className="flex items-center">
-          <span className="text-white mr-2">Luis</span>
+          <span className="text-white mr-2">{userName}</span>
           <div className="w-8 h-8 rounded-full bg-gray-300 overflow-hidden border-2 border-white">
-            {/* Avatar placeholder */}
-            <div className="w-full h-full bg-gradient-to-br from-blue-500 to-green-500"></div>
+            {currentUser?.photoUrl ? (
+              <Image
+                src={currentUser.photoUrl || "/placeholder.svg"}
+                alt={`Foto de ${userName}`}
+                width={32}
+                height={32}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full bg-gradient-to-br from-blue-500 to-green-500"></div>
+            )}
           </div>
         </div>
       </header>
