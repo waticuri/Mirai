@@ -14,7 +14,7 @@ export default function ConnectDevicePage() {
   const [waveAnimation, setWaveAnimation] = useState(0)
   const [isLoaded, setIsLoaded] = useState(false)
 
-  // Animar las ondas de sonido
+  // Animate sound waves
   useEffect(() => {
     const interval = setInterval(() => {
       setWaveAnimation((prev) => (prev + 1) % 3)
@@ -22,24 +22,24 @@ export default function ConnectDevicePage() {
     return () => clearInterval(interval)
   }, [])
 
-  // Inicializar página y simular búsqueda de dispositivo
+  // Initialize page and simulate device search
   useEffect(() => {
     setIsLoaded(true)
 
-    // Reproducir mensaje de búsqueda después de un breve retraso
+    // Play search message after a short delay
     const timer1 = setTimeout(() => {
       speak(
         "Buscando dispositivo Mirai. Por favor, enciende el dispositivo manteniendo presionado el botón de encendido.",
       )
     }, 1000)
 
-    // Simular que se encontró el dispositivo después de 5 segundos
+    // Simulate finding the device after 5 seconds
     const timer2 = setTimeout(() => {
       setIsSearching(false)
       setIsConnected(true)
       speak("Dispositivo Mirai conectado correctamente.")
 
-      // Redirigir al dashboard después de mostrar la confirmación
+      // Redirect to dashboard after showing confirmation
       const timer3 = setTimeout(() => {
         router.push("/dashboard")
       }, 2000)
@@ -53,7 +53,7 @@ export default function ConnectDevicePage() {
     }
   }, [speak, router])
 
-  // Renderizar ondas de sonido
+  // Render sound waves
   const renderSoundWaves = () => {
     const waves = [
       "M10,50 Q15,40 20,50 Q25,60 30,50 Q35,40 40,50 Q45,60 50,50 Q55,40 60,50 Q65,60 70,50 Q75,40 80,50 Q85,60 90,50",
@@ -71,12 +71,9 @@ export default function ConnectDevicePage() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-b from-[#6a3de8] via-[#3b82f6] to-[#06b6d4] p-4">
       <div
-        className={`flex flex-col items-center justify-center transition-opacity duration-1000 ease-in-out ${
-          isLoaded ? "opacity-100" : "opacity-0"
-        }`}
+        className={`flex flex-col items-center justify-center transition-opacity duration-1000 ease-in-out ${isLoaded ? "opacity-100" : "opacity-0"}`}
       >
         {isSearching ? (
-          // Pantalla de búsqueda
           <>
             <div className="w-32 h-32 bg-white rounded-full flex items-center justify-center mb-6">
               <div className="w-20 h-12 relative">
@@ -90,7 +87,6 @@ export default function ConnectDevicePage() {
             </p>
           </>
         ) : (
-          // Pantalla de conexión exitosa
           <>
             <div className="w-32 h-32 bg-white rounded-full flex items-center justify-center mb-6">
               <Check className="h-16 w-16 text-[#3B82F6] stroke-[3]" />
